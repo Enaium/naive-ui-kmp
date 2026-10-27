@@ -68,6 +68,8 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.compose.uiTest)
             implementation(libs.kotlinx.coroutinesSwing)
+            implementation(libs.kotlin.testJunit)
+            implementation(libs.junit)
         }
     }
 }
