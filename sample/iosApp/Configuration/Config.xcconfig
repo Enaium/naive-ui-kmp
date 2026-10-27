@@ -1,0 +1,7 @@
+TEAM_ID=
+
+PRODUCT_NAME=naive-ui-kmp
+PRODUCT_BUNDLE_IDENTIFIER=cn.enaium.naive_ui_kmp.naive-ui-kmp$(TEAM_ID)
+
+CURRENT_PROJECT_VERSION=1
+MARKETING_VERSION=1.0
