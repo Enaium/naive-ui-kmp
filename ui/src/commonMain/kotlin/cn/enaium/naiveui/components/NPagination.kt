@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +45,21 @@ import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NSize
 import cn.enaium.naiveui.theme.nSize
 import kotlin.math.ceil
+
+/** Page range information passed to pagination slots. */
+@Immutable
+data class NPaginationInfo(
+    val startIndex: Int,
+    val endIndex: Int,
+    val page: Int,
+    val pageSize: Int,
+    val pageCount: Int,
+    val itemCount: Int?,
+)
+
+/** A labelled page size option for the size picker. */
+@Immutable
+data class NPaginationSizeOption(val value: Int, val label: String)
 
 private sealed interface NPageItem {
     data class Page(val value: Int) : NPageItem
@@ -73,6 +89,13 @@ fun NPagination(
     simple: Boolean = false,
     itemCount: Int? = null,
     pageSlot: Int = 9,
+    pageSizeOptions: List<NPaginationSizeOption> = emptyList(),
+    prefix: (@Composable (NPaginationInfo) -> Unit)? = null,
+    suffix: (@Composable (NPaginationInfo) -> Unit)? = null,
+    prev: (@Composable (NPaginationInfo) -> Unit)? = null,
+    next: (@Composable (NPaginationInfo) -> Unit)? = null,
+    goto: (@Composable () -> Unit)? = null,
+    label: (@Composable (page: Int, active: Boolean) -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
     val locale = LocalNLocale.current
@@ -94,6 +117,18 @@ fun NPagination(
             ?: 1
         ).coerceAtLeast(1)
     val current = page.coerceIn(1, totalPages)
+    val prefixSlot = prefix
+    val suffixSlot = suffix
+    val gotoSlot = goto
+    val labelSlot = label
+    val info = NPaginationInfo(
+        startIndex = if (itemCount != null && itemCount == 0) 0 else (current - 1) * pageSize + 1,
+        endIndex = itemCount?.let { minOf(current * pageSize, it) } ?: (current * pageSize),
+        page = current,
+        pageSize = pageSize,
+        pageCount = totalPages,
+        itemCount = itemCount,
+    )
 
     fun goTo(target: Int) {
         if (disabled) return
@@ -112,6 +147,8 @@ fun NPagination(
                 enabled = !disabled && current > 1,
                 itemHeight = itemHeight,
                 iconSize = iconSize,
+                slot = prev,
+                info = info,
             ) { goTo(current - 1) }
             SimplePageInput(
                 page = current,
@@ -125,6 +162,8 @@ fun NPagination(
                 enabled = !disabled && current < totalPages,
                 itemHeight = itemHeight,
                 iconSize = iconSize,
+                slot = next,
+                info = info,
             ) { goTo(current + 1) }
         }
         return
@@ -135,11 +174,14 @@ fun NPagination(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        if (prefixSlot != null) prefixSlot(info)
         PageArrow(
             forward = false,
             enabled = !disabled && current > 1,
             itemHeight = itemHeight,
             iconSize = iconSize,
+            slot = prev,
+            info = info,
         ) { goTo(current - 1) }
 
         buildPageItems(current, totalPages, pageSlot).forEach { item ->
@@ -150,6 +192,7 @@ fun NPagination(
                     disabled = disabled,
                     itemHeight = itemHeight,
                     fontSize = fontSize,
+                    label = labelSlot,
                     onClick = { goTo(item.value) },
                 )
                 is NPageItem.Jump -> PageJumpButton(
@@ -167,10 +210,19 @@ fun NPagination(
             enabled = !disabled && current < totalPages,
             itemHeight = itemHeight,
             iconSize = iconSize,
+            slot = next,
+            info = info,
         ) { goTo(current + 1) }
 
-        if (showSizePicker && onPageSizeChange != null) {
-            val sizes = (pageSizes + pageSize).distinct().sorted()
+        val sizeChange = onPageSizeChange
+        if (showSizePicker && sizeChange != null) {
+            val sizes = if (pageSizeOptions.isNotEmpty()) {
+                pageSizeOptions
+            } else {
+                (pageSizes + pageSize).distinct().sorted().map {
+                    NPaginationSizeOption(it, "$it ${locale.itemsPerPage}")
+                }
+            }
             var open by remember { mutableStateOf(false) }
             Box {
                 Row(
@@ -186,7 +238,8 @@ fun NPagination(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     NBaseText(
-                        text = "$pageSize ${locale.itemsPerPage}",
+                        text = sizes.firstOrNull { it.value == pageSize }?.label
+                            ?: "$pageSize ${locale.itemsPerPage}",
                         style = theme.typography.style(fontSize, color = if (disabled) theme.colors.textDisabled else theme.colors.text2),
                     )
                     NIcon(
@@ -204,8 +257,8 @@ fun NPagination(
                 ) {
                     Column(Modifier.widthIn(min = 120.dp)) {
                         sizes.forEach { option ->
-                            val selected = option == pageSize
-                            val interaction = remember(option) { MutableInteractionSource() }
+                            val selected = option.value == pageSize
+                            val interaction = remember(option.value) { MutableInteractionSource() }
                             val hovered by interaction.collectIsHoveredAsState()
                             Row(
                                 modifier = Modifier
@@ -216,13 +269,13 @@ fun NPagination(
                                     .hoverable(interaction)
                                     .nClickable(interaction) {
                                         open = false
-                                        if (!selected) onPageSizeChange(option)
+                                        if (!selected) sizeChange(option.value)
                                     }
                                     .padding(horizontal = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 NBaseText(
-                                    text = "$option ${locale.itemsPerPage}",
+                                    text = option.label,
                                     style = theme.typography.style(
                                         fontSize,
                                         if (selected) FontWeight.Medium else theme.typography.fontWeight,
@@ -247,7 +300,11 @@ fun NPagination(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                NText(locale.jumpTo, size = fontSize, color = theme.colors.text2)
+                if (gotoSlot != null) {
+                    gotoSlot()
+                } else {
+                    NText(locale.jumpTo, size = fontSize, color = theme.colors.text2)
+                }
                 NInput(
                     value = quick,
                     onValueChange = { value -> quick = value.filter { it.isDigit() }.take(6) },
@@ -268,6 +325,7 @@ fun NPagination(
                 }
             }
         }
+        if (suffixSlot != null) suffixSlot(info)
     }
 }
 
@@ -278,6 +336,7 @@ private fun PageButton(
     disabled: Boolean,
     itemHeight: Dp,
     fontSize: androidx.compose.ui.unit.TextUnit,
+    label: (@Composable (page: Int, active: Boolean) -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val theme = LocalNTheme.current
@@ -305,15 +364,19 @@ private fun PageButton(
             .nClickable(interaction, enabled = !disabled && !active, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        NBaseText(
-            text = page.toString(),
-            style = theme.typography.style(
-                fontSize,
-                if (active) FontWeight.Medium else theme.typography.fontWeight,
-                textColor,
-            ),
-            modifier = Modifier.padding(horizontal = 6.dp),
-        )
+        if (label != null) {
+            label(page, active)
+        } else {
+            NBaseText(
+                text = page.toString(),
+                style = theme.typography.style(
+                    fontSize,
+                    if (active) FontWeight.Medium else theme.typography.fontWeight,
+                    textColor,
+                ),
+                modifier = Modifier.padding(horizontal = 6.dp),
+            )
+        }
     }
 }
 
@@ -355,6 +418,8 @@ private fun PageArrow(
     enabled: Boolean,
     itemHeight: Dp,
     iconSize: Dp,
+    slot: (@Composable (NPaginationInfo) -> Unit)? = null,
+    info: NPaginationInfo? = null,
     onClick: () -> Unit,
 ) {
     val theme = LocalNTheme.current
@@ -363,7 +428,8 @@ private fun PageArrow(
     Box(
         modifier = Modifier
             .height(itemHeight)
-            .width(itemHeight)
+            .then(if (slot == null) Modifier.width(itemHeight) else Modifier)
+            .padding(horizontal = if (slot == null) 0.dp else 8.dp)
             .clip(RoundedCornerShape(theme.borderRadius))
             .nBorder(
                 if (enabled && hovered) theme.colors.primaryHover else theme.colors.border,
@@ -374,15 +440,19 @@ private fun PageArrow(
             .nClickable(interaction, enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        NIcon(
-            if (forward) NIcons.Forward else NIcons.Backward,
-            size = iconSize,
-            color = when {
-                !enabled -> theme.colors.textDisabled
-                hovered -> theme.colors.primaryHover
-                else -> theme.colors.text2
-            },
-        )
+        if (slot != null && info != null) {
+            slot(info)
+        } else {
+            NIcon(
+                if (forward) NIcons.Forward else NIcons.Backward,
+                size = iconSize,
+                color = when {
+                    !enabled -> theme.colors.textDisabled
+                    hovered -> theme.colors.primaryHover
+                    else -> theme.colors.text2
+                },
+            )
+        }
     }
 }
 

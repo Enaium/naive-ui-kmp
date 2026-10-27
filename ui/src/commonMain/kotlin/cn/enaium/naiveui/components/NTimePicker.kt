@@ -29,7 +29,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.internal.NPlacement
 import cn.enaium.naiveui.internal.NPopoverSurface
 import cn.enaium.naiveui.internal.NScrollbar
@@ -37,11 +36,31 @@ import cn.enaium.naiveui.internal.nClickable
 import cn.enaium.naiveui.theme.LocalNLocale
 import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NSize
+import cn.enaium.naiveui.theme.NStatus
 import cn.enaium.naiveui.theme.nSize
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
+
+/** Footer actions supported by [NTimePicker]. */
+enum class NTimePickerAction { Now, Clear, Confirm }
+
+/** Imperative handle for focusing and blurring a time picker. */
+class NTimePickerController internal constructor() {
+    internal var request by mutableStateOf<Boolean?>(null)
+
+    fun focus() {
+        request = true
+    }
+
+    fun blur() {
+        request = false
+    }
+}
+
+@Composable
+fun rememberNTimePickerController(): NTimePickerController = remember { NTimePickerController() }
 
 private fun nTimeValues(step: Int, count: Int): List<Int> {
     val safeStep = step.coerceAtLeast(1)
@@ -70,7 +89,7 @@ private fun NTimeColumn(
         if (index >= 0) {
             val viewport = with(density) { height.toPx() }
             val itemPx = with(density) { itemHeight.toPx() }
-            val topSpacer = with(density) { 72.dp.toPx() }
+            val topSpacer = with(density) { 4.dp.toPx() }
             val target = topSpacer + itemPx * index - viewport / 2f + itemPx / 2f
             scrollState.scrollTo(target.toInt().coerceAtLeast(0))
         }
@@ -78,7 +97,7 @@ private fun NTimeColumn(
     Box(Modifier.width(width).height(height)) {
         NScrollbar(Modifier.fillMaxSize(), scrollState = scrollState) {
             Column(Modifier.fillMaxWidth()) {
-                Spacer(Modifier.height(72.dp))
+                Spacer(Modifier.height(4.dp))
                 values.forEach { value ->
                     val active = value == selected
                     val itemDisabled = !enabled || isDisabled(value)
@@ -120,8 +139,8 @@ private fun NTimeColumn(
 }
 
 /**
- * The hour/minute/second columns shared by [NTimePicker] and the date-time
- * picker. Values outside [hourStep]/[minuteStep]/[secondStep] are omitted.
+ * The hour/minute/second columns shared by [NTimePicker] and [NDatePicker].
+ * Values outside [hourStep]/[minuteStep]/[secondStep] are omitted.
  */
 @Composable
 internal fun NTimeColumns(
@@ -143,7 +162,6 @@ internal fun NTimeColumns(
     onMinuteChange: (Int) -> Unit,
     onSecondChange: (Int) -> Unit,
 ) {
-    val theme = LocalNTheme.current
     val locale = LocalNLocale.current
     val hours24 = nTimeValues(hourStep, 24)
     val hours12 = hours24.map { ((it + 11) % 12) + 1 }.distinct()
@@ -221,12 +239,33 @@ private fun NTimeDivider(height: Dp) {
     Box(Modifier.width(1.dp).height(height).background(theme.colors.divider))
 }
 
+@Composable
+private fun NTimeActions(
+    actions: Set<NTimePickerAction>,
+    onClear: () -> Unit,
+    onNow: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    if (actions.isEmpty()) return
+    val locale = LocalNLocale.current
+    NPanelFooter {
+        if (NTimePickerAction.Clear in actions) {
+            NPanelFooterButton(locale.date.clear, onClick = onClear)
+        }
+        if (NTimePickerAction.Now in actions) {
+            NPanelFooterButton(locale.date.now, onClick = onNow)
+        }
+        if (NTimePickerAction.Confirm in actions) {
+            NPanelFooterButton(locale.confirm, primary = true, onClick = onConfirm)
+        }
+    }
+}
+
 /**
  * Time picker with scrollable hour, minute and second columns.
  *
- * Column clicks update the value immediately, like naive-ui. `Now` resets the
- * draft to the current wall-clock time and `Confirm` closes the panel after
- * invoking [onConfirm].
+ * Column clicks update the value immediately, like naive-ui. The footer actions
+ * default to Now and Confirm; pass an explicit empty set to hide the footer.
  */
 @Composable
 fun NTimePicker(
@@ -246,52 +285,90 @@ fun NTimePicker(
     isHourDisabled: ((Int) -> Boolean)? = null,
     isMinuteDisabled: ((Int) -> Boolean)? = null,
     isSecondDisabled: ((Int) -> Boolean)? = null,
+    actions: Set<NTimePickerAction>? = null,
+    status: NStatus? = null,
+    timeZone: TimeZone? = null,
     onClear: (() -> Unit)? = null,
     onConfirm: ((LocalTime) -> Unit)? = null,
+    onFocus: (() -> Unit)? = null,
+    onBlur: (() -> Unit)? = null,
+    controller: NTimePickerController? = null,
+    formattedValue: String? = null,
+    onFormattedValueChange: ((String?) -> Unit)? = null,
 ) {
     val locale = LocalNLocale.current
-    val zone = remember { TimeZone.currentSystemDefault() }
+    val zone = timeZone ?: remember { TimeZone.currentSystemDefault() }
     val pattern = format ?: if (showSeconds) "HH:mm:ss" else "HH:mm"
     val secondVisible = format?.contains('s') ?: showSeconds
     val resolvedSize = nSize(size)
+    val resolvedActions = actions ?: setOf(NTimePickerAction.Now, NTimePickerAction.Confirm)
     var visible by remember { mutableStateOf(false) }
+    val initialNow = remember(zone) { Clock.System.now().toLocalDateTime(zone).time }
+    var hour by remember(visible) { mutableStateOf(value?.hour ?: initialNow.hour) }
+    var minute by remember(visible) { mutableStateOf(value?.minute ?: initialNow.minute) }
+    var second by remember(visible) { mutableStateOf(value?.second ?: initialNow.second) }
+
+    fun formatted(time: LocalTime?): String? =
+        time?.let { nDateFormat(null, it, pattern, locale.date) }
+
+    fun emitValue(time: LocalTime?) {
+        onValueChange(time)
+        onFormattedValueChange?.invoke(formatted(time))
+    }
+
+    fun closePopup() {
+        val wasVisible = visible
+        visible = false
+        if (wasVisible) onBlur?.invoke()
+    }
+
+    if (controller != null) {
+        LaunchedEffect(controller.request) {
+            val request = controller.request
+            if (request != null) {
+                controller.request = null
+                if (request) {
+                    if (!visible) {
+                        visible = true
+                        onFocus?.invoke()
+                    }
+                } else if (visible) {
+                    closePopup()
+                }
+            }
+        }
+    }
 
     Box(modifier) {
         NDateInputTrigger(
-            text = value?.let { nDateFormat(null, it, pattern, locale.date) },
+            text = formattedValue ?: formatted(value),
             placeholder = placeholder ?: locale.date.selectTime,
             disabled = disabled,
             size = resolvedSize,
             clearable = clearable,
-            onClick = { visible = !visible },
+            status = status,
+            onClick = {
+                if (visible) closePopup() else {
+                    visible = true
+                    onFocus?.invoke()
+                }
+            },
             onClear = {
-                visible = false
-                onValueChange(null)
+                emitValue(null)
                 onClear?.invoke()
+                closePopup()
             },
         )
         NPopoverSurface(
             visible = visible && !disabled,
-            onDismiss = { visible = false },
+            onDismiss = { closePopup() },
             placement = NPlacement.BottomStart,
             padding = PaddingValues(0.dp),
         ) {
-            val now = remember { Clock.System.now().toLocalDateTime(zone).time }
-            var hour by remember { mutableStateOf(value?.hour ?: now.hour) }
-            var minute by remember { mutableStateOf(value?.minute ?: now.minute) }
-            var second by remember { mutableStateOf(value?.second ?: now.second) }
-
-            fun emit(newHour: Int = hour, newMinute: Int = minute, newSecond: Int = second) {
-                hour = newHour
-                minute = newMinute
-                second = newSecond
-                onValueChange(LocalTime(newHour, newMinute, newSecond))
-            }
-
             val columnCount = if (secondVisible) 3 else 2
-            val panelWidth = 48.dp * columnCount + 1.dp * (columnCount - 1) +
+            val timeWidth = 48.dp * columnCount + 1.dp * (columnCount - 1) +
                 if (use12Hours) 51.dp else 0.dp
-            Column(Modifier.padding(12.dp).width(panelWidth)) {
+            Column(Modifier.padding(12.dp).width(timeWidth)) {
                 NTimeColumns(
                     hour = hour,
                     minute = minute,
@@ -305,22 +382,41 @@ fun NTimePicker(
                     isHourDisabled = isHourDisabled ?: { false },
                     isMinuteDisabled = isMinuteDisabled ?: { false },
                     isSecondDisabled = isSecondDisabled ?: { false },
-                    onHourChange = { emit(newHour = it) },
-                    onMinuteChange = { emit(newMinute = it) },
-                    onSecondChange = { emit(newSecond = it) },
+                    onHourChange = {
+                        hour = it
+                        emitValue(LocalTime(hour, minute, second))
+                    },
+                    onMinuteChange = {
+                        minute = it
+                        emitValue(LocalTime(hour, minute, second))
+                    },
+                    onSecondChange = {
+                        second = it
+                        emitValue(LocalTime(hour, minute, second))
+                    },
                 )
-                NPanelFooter {
-                    NPanelFooterButton(locale.date.now) {
-                        emit(now.hour, now.minute, now.second)
-                        visible = false
-                    }
-                    NPanelFooterButton(locale.confirm) {
+                NTimeActions(
+                    actions = resolvedActions,
+                    onClear = {
+                        emitValue(null)
+                        onClear?.invoke()
+                        closePopup()
+                    },
+                    onNow = {
+                        val current = Clock.System.now().toLocalDateTime(zone).time
+                        hour = current.hour
+                        minute = current.minute
+                        second = current.second
+                        emitValue(current)
+                        closePopup()
+                    },
+                    onConfirm = {
                         val time = LocalTime(hour, minute, second)
-                        onValueChange(time)
+                        emitValue(time)
                         onConfirm?.invoke(time)
-                        visible = false
-                    }
-                }
+                        closePopup()
+                    },
+                )
             }
         }
     }

@@ -24,10 +24,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.theme.LocalNComponentSize
 import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NSize
@@ -39,6 +39,9 @@ enum class NFormLabelPlacement { Top, Left }
 
 /** Value types understood by [NFormRule]. */
 enum class NFormRuleType { String, Number, Array, Boolean, Email }
+
+/** Severity of a failed rule. */
+enum class NFormRuleLevel { Error, Warning }
 
 /**
  * A single validation rule, mirroring the subset of `async-validator` used by
@@ -52,29 +55,53 @@ data class NFormRule(
     val max: Int? = null,
     val pattern: Regex? = null,
     val type: NFormRuleType? = null,
+    val key: String? = null,
+    val asyncValidator: (suspend (Any?) -> Boolean)? = null,
+    val level: NFormRuleLevel = NFormRuleLevel.Error,
+    val renderMessage: (() -> String)? = null,
 ) {
-    internal fun check(value: Any?): String? {
+    internal fun check(value: Any?, path: String, messages: Map<String, String>): String? {
         if (isEmptyValue(value)) {
-            return if (required) message ?: "This field is required" else null
+            return if (required) messageFor("required", path, messages, "This field is required") else null
         }
         if (type != null && !type.accepts(value)) {
-            return message ?: "Invalid value"
+            return messageFor("type", path, messages, "Invalid value")
         }
         val size = measure(value)
         if (min != null && size != null && size < min) {
-            return message ?: "Value should be at least $min"
+            return messageFor("min", path, messages, "Value should be at least $min")
         }
         if (max != null && size != null && size > max) {
-            return message ?: "Value should be at most $max"
+            return messageFor("max", path, messages, "Value should be at most $max")
         }
         if (pattern != null && (value !is String || !pattern.matches(value))) {
-            return message ?: "Invalid format"
+            return messageFor("pattern", path, messages, "Invalid format")
         }
         if (validator != null && !validator.invoke(value)) {
-            return message ?: "Validation failed"
+            return messageFor("validator", path, messages, "Validation failed")
         }
         return null
     }
+
+    internal suspend fun asyncCheck(
+        value: Any?,
+        path: String,
+        messages: Map<String, String>,
+    ): String? {
+        val async = asyncValidator ?: return null
+        if (isEmptyValue(value)) return null
+        return if (async(value)) null else messageFor("validator", path, messages, "Validation failed")
+    }
+
+    internal fun messageFor(
+        kind: String,
+        path: String,
+        messages: Map<String, String>,
+        fallback: String,
+    ): String = renderMessage?.invoke()
+        ?: message
+        ?: messages[kind]?.replace("%s", path)
+        ?: fallback
 }
 
 private fun isEmptyValue(value: Any?): Boolean = when (value) {
@@ -103,35 +130,55 @@ private fun NFormRuleType.accepts(value: Any?): Boolean = when (this) {
 
 private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
 
+private fun MutableMap<String, List<String>>.add(path: String, message: String) {
+    this[path] = (this[path].orEmpty()) + message
+}
+
+private data class Evaluation(
+    val errors: Map<String, List<String>>,
+    val warnings: Map<String, List<String>>,
+)
+
 /**
  * Validation state shared by a form and its items. Create it with
- * [rememberNFormState] and pass it to [NForm], then call [validate] from a
- * button or any other event handler.
+ * [rememberNFormState] and pass it to [NForm], then call [validate] or
+ * [validateAsync] from an event handler.
  */
 @Stable
 class NFormState {
     var errors by mutableStateOf<Map<String, List<String>>>(emptyMap())
         private set
 
-    /** Whether [validate] has run at least once since the last restore. */
+    /** Warnings produced by rules with [NFormRuleLevel.Warning]. */
+    var warnings by mutableStateOf<Map<String, List<String>>>(emptyMap())
+        private set
+
+    /** Whether validation has run at least once since the last restore. */
     var validated by mutableStateOf(false)
         private set
 
-    /** Fallback callback used when [validate] is called without one. */
+    /** Whether an async validation is currently running. */
+    var validating by mutableStateOf(false)
+        private set
+
+    /** Fallback callback used when validation is called without one. */
     var validateCallback: ((Boolean) -> Unit)? = null
 
     private var model: Map<String, Any?> = emptyMap()
     private var formRules: Map<String, List<NFormRule>> = emptyMap()
+    private var validateMessages: Map<String, String> = emptyMap()
     private val itemRules = LinkedHashMap<String, List<NFormRule>>()
 
     internal fun attach(
         model: Map<String, Any?>,
         rules: Map<String, List<NFormRule>>,
         callback: ((Boolean) -> Unit)?,
+        messages: Map<String, String>,
     ) {
         this.model = model
         this.formRules = rules
         this.validateCallback = callback
+        this.validateMessages = messages
     }
 
     internal fun registerItemRules(path: String, rules: List<NFormRule>) {
@@ -143,60 +190,158 @@ class NFormState {
     }
 
     /**
-     * Validates every registered path and updates [errors]. Returns whether
-     * the form is valid.
+     * Validates synchronously. Async validators are ignored; use
+     * [validateAsync] to run them.
+     *
+     * When [paths] or [shouldRuleBeApplied] is set, only the selected paths and
+     * rules are validated and their previous results are replaced, leaving
+     * other form items untouched.
      */
-    fun validate(callback: ((Boolean) -> Unit)? = null): Boolean {
-        val next = evaluate()
-        update(next)
+    fun validate(
+        callback: ((Boolean) -> Unit)? = null,
+        paths: Set<String>? = null,
+        shouldRuleBeApplied: ((NFormRule) -> Boolean)? = null,
+    ): Boolean {
+        val full = paths == null && shouldRuleBeApplied == null
+        val result = evaluateSync(paths, shouldRuleBeApplied)
+        if (full) {
+            update(result.errors, result.warnings)
+        } else {
+            val base = paths ?: allRulePaths()
+            val selected = if (shouldRuleBeApplied == null) {
+                base
+            } else {
+                base.filter { path -> effectiveRules(path).any(shouldRuleBeApplied) }.toSet()
+            }
+            updatePartial(selected, result)
+        }
         validated = true
-        val valid = next.isEmpty()
+        val valid = result.errors.isEmpty()
         (callback ?: validateCallback)?.invoke(valid)
         return valid
     }
 
+    /**
+     * Validates every path, awaiting all [NFormRule.asyncValidator] callbacks.
+     */
+    suspend fun validateAsync(callback: ((Boolean) -> Unit)? = null): Boolean {
+        validating = true
+        try {
+            val result = evaluateAsync()
+            update(result.errors, result.warnings)
+            validated = true
+            val valid = result.errors.isEmpty()
+            (callback ?: validateCallback)?.invoke(valid)
+            return valid
+        } finally {
+            validating = false
+        }
+    }
+
     /** Validates a single path, leaving other errors untouched. */
     fun validatePath(path: String, callback: ((Boolean) -> Unit)? = null): Boolean {
-        val messages = effectiveRules(path).mapNotNull { it.check(valueAt(path)) }
-        val next = errors.toMutableMap()
-        if (messages.isEmpty()) next.remove(path) else next[path] = messages
-        update(next)
+        val result = evaluateSync(setOf(path), null)
+        updatePartial(setOf(path), result)
         validated = true
-        val valid = messages.isEmpty()
-        (callback ?: validateCallback)?.invoke(valid)
+        val valid = result.errors.isEmpty()
+        callback?.invoke(valid)
         return valid
     }
 
     fun restoreValidation() {
         validated = false
-        update(emptyMap())
+        update(emptyMap(), emptyMap())
     }
 
     fun errorOf(path: String): String? = errors[path]?.firstOrNull()
 
     fun errorsOf(path: String): List<String> = errors[path].orEmpty()
 
-    fun statusOf(path: String): NStatus =
-        if (errors.containsKey(path)) NStatus.Error else NStatus.Default
+    fun warningOf(path: String): String? = warnings[path]?.firstOrNull()
+
+    fun warningsOf(path: String): List<String> = warnings[path].orEmpty()
+
+    fun statusOf(path: String): NStatus = when {
+        errors.containsKey(path) -> NStatus.Error
+        warnings.containsKey(path) -> NStatus.Warning
+        else -> NStatus.Default
+    }
 
     internal fun revalidate() {
-        if (validated) update(evaluate())
+        if (!validated) return
+        val result = evaluateSync(null, null)
+        update(result.errors, result.warnings)
     }
 
-    private fun update(next: Map<String, List<String>>) {
-        if (next != errors) errors = next
+    private fun update(
+        nextErrors: Map<String, List<String>>,
+        nextWarnings: Map<String, List<String>>,
+    ) {
+        if (nextErrors != errors) errors = nextErrors
+        if (nextWarnings != warnings) warnings = nextWarnings
     }
 
-    private fun evaluate(): Map<String, List<String>> {
+    private fun updatePartial(paths: Set<String>, result: Evaluation) {
+        val nextErrors = errors.toMutableMap()
+        val nextWarnings = warnings.toMutableMap()
+        paths.forEach { path ->
+            nextErrors.remove(path)
+            nextWarnings.remove(path)
+        }
+        nextErrors.putAll(result.errors)
+        nextWarnings.putAll(result.warnings)
+        update(nextErrors, nextWarnings)
+    }
+
+    private fun allRulePaths(): Set<String> {
         val paths = LinkedHashSet<String>()
         paths.addAll(formRules.keys)
         paths.addAll(itemRules.keys)
-        val result = LinkedHashMap<String, List<String>>()
-        paths.forEach { path ->
-            val messages = effectiveRules(path).mapNotNull { it.check(valueAt(path)) }
-            if (messages.isNotEmpty()) result[path] = messages
+        return paths
+    }
+
+    private fun evaluateSync(
+        paths: Set<String>?,
+        shouldRuleBeApplied: ((NFormRule) -> Boolean)?,
+    ): Evaluation {
+        val errors = LinkedHashMap<String, List<String>>()
+        val warnings = LinkedHashMap<String, List<String>>()
+        (paths ?: allRulePaths()).forEach { path ->
+            val value = valueAt(path)
+            effectiveRules(path)
+                .filter { shouldRuleBeApplied == null || shouldRuleBeApplied(it) }
+                .forEach { rule ->
+                    val message = rule.check(value, path, validateMessages)
+                    if (message != null) {
+                        if (rule.level == NFormRuleLevel.Warning) {
+                            warnings.add(path, message)
+                        } else {
+                            errors.add(path, message)
+                        }
+                    }
+                }
         }
-        return result
+        return Evaluation(errors, warnings)
+    }
+
+    private suspend fun evaluateAsync(): Evaluation {
+        val errors = LinkedHashMap<String, List<String>>()
+        val warnings = LinkedHashMap<String, List<String>>()
+        allRulePaths().forEach { path ->
+            val value = valueAt(path)
+            effectiveRules(path).forEach { rule ->
+                val message = rule.check(value, path, validateMessages)
+                    ?: rule.asyncCheck(value, path, validateMessages)
+                if (message != null) {
+                    if (rule.level == NFormRuleLevel.Warning) {
+                        warnings.add(path, message)
+                    } else {
+                        errors.add(path, message)
+                    }
+                }
+            }
+        }
+        return Evaluation(errors, warnings)
     }
 
     private fun effectiveRules(path: String): List<NFormRule> =
@@ -236,14 +381,21 @@ data class NFormContext(
     val showLabel: Boolean,
     val showRequireMark: Boolean,
     val inline: Boolean,
+    val disabled: Boolean,
     val rules: Map<String, List<NFormRule>>,
+    val validateMessages: Map<String, String>,
 ) {
+    val validateCallback: ((Boolean) -> Unit)? get() = state.validateCallback
+
     fun validate(callback: ((Boolean) -> Unit)? = null): Boolean = state.validate(callback)
 
     fun restoreValidation() = state.restoreValidation()
 }
 
 val LocalNForm = staticCompositionLocalOf<NFormContext?> { null }
+
+/** Whether the enclosing form is disabled. */
+val LocalNFormDisabled = staticCompositionLocalOf { false }
 
 /** Validation status of the enclosing [NFormItem], consumed by inputs. */
 val LocalNFormItemStatus = staticCompositionLocalOf<NStatus?> { null }
@@ -252,8 +404,8 @@ val LocalNFormItemStatus = staticCompositionLocalOf<NStatus?> { null }
  * Collects and validates data. Rules are keyed by model path and can be
  * overridden per item through [NFormItem]'s `rule`/`rules` parameters.
  *
- * The [model] map is read when [NFormState.validate] runs, so demos should
- * rebuild it from their state on every composition.
+ * The [model] map is read when validation runs, so demos should rebuild it
+ * from their state on every composition.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -269,11 +421,13 @@ fun NForm(
     showFeedback: Boolean = true,
     showRequireMark: Boolean = true,
     inline: Boolean = false,
+    disabled: Boolean = false,
+    validateMessages: Map<String, String> = emptyMap(),
     validateCallback: ((Boolean) -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val resolvedSize = nSize(size)
-    SideEffect { state.attach(model, rules, validateCallback) }
+    SideEffect { state.attach(model, rules, validateCallback, validateMessages) }
     LaunchedEffect(state, model) { state.revalidate() }
 
     val context = NFormContext(
@@ -285,10 +439,13 @@ fun NForm(
         showLabel = showLabel,
         showRequireMark = showRequireMark,
         inline = inline,
+        disabled = disabled,
         rules = rules,
+        validateMessages = validateMessages,
     )
     CompositionLocalProvider(
         LocalNForm provides context,
+        LocalNFormDisabled provides disabled,
         LocalNComponentSize provides resolvedSize,
     ) {
         if (inline) {
@@ -306,9 +463,9 @@ fun NForm(
 }
 
 /**
- * A labeled form field. Errors produced by the enclosing form are rendered as
- * feedback below the content; [feedback] provides a static hint when no error
- * is present.
+ * A labeled form field. Errors (and warnings) produced by the enclosing form
+ * are rendered as feedback below the content; [feedback] provides a static
+ * hint when neither is present.
  */
 @Composable
 fun NFormItem(
@@ -322,6 +479,8 @@ fun NFormItem(
     feedback: String? = null,
     validationMessage: String? = null,
     validationStatus: NStatus? = null,
+    feedbackAlignment: Alignment.Horizontal? = null,
+    feedbackColor: Color? = null,
     labelPlacement: NFormLabelPlacement? = null,
     labelWidth: Dp? = null,
     size: NSize? = null,
@@ -330,13 +489,13 @@ fun NFormItem(
     extra: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    val theme = LocalNTheme.current
     val form = LocalNForm.current
     val resolvedSize = nSize(size ?: form?.size)
     val placement = labelPlacement ?: form?.labelPlacement ?: NFormLabelPlacement.Top
     val resolvedShowLabel = showLabel ?: form?.showLabel ?: true
     val resolvedShowFeedback = showFeedback ?: form?.showFeedback ?: true
     val showRequireMark = form?.showRequireMark ?: true
+    val inline = form?.inline == true
 
     val localRules = when {
         rules.isNotEmpty() -> rules
@@ -353,7 +512,9 @@ fun NFormItem(
         }
     }
 
-    val messages = if (form != null && path != null) form.state.errorsOf(path) else emptyList()
+    val errors = if (form != null && path != null) form.state.errorsOf(path) else emptyList()
+    val warnings = if (form != null && path != null) form.state.warningsOf(path) else emptyList()
+    val messages = if (errors.isNotEmpty()) errors else warnings
     val stateStatus = if (form != null && path != null) {
         form.state.statusOf(path)
     } else {
@@ -369,7 +530,7 @@ fun NFormItem(
         explicitValidation != null -> explicitValidation
         else -> listOfNotNull(feedback)
     }
-    val rootModifier = if (form?.inline == true) modifier else modifier.fillMaxWidth()
+    val rootModifier = if (inline) modifier else modifier.fillMaxWidth()
 
     Column(rootModifier.padding(top = if (first) 0.dp else 12.dp)) {
         val labelContent: @Composable () -> Unit = {
@@ -381,13 +542,23 @@ fun NFormItem(
             if (resolvedShowLabel && label != null) {
                 Box(Modifier.padding(bottom = 6.dp, start = 2.dp)) { labelContent() }
             }
-            FormItemContent(resolvedSize, status, form?.inline == true, content)
+            FormItemContent(resolvedSize, status, inline, content)
             extra?.let { Box(Modifier.fillMaxWidth().padding(top = 2.dp)) { it() } }
             if (resolvedShowFeedback) {
-                FormItemFeedback(feedbackLines, status, resolvedSize)
+                FormItemFeedback(
+                    feedbackLines,
+                    status,
+                    resolvedSize,
+                    inline,
+                    feedbackAlignment,
+                    feedbackColor,
+                )
             }
         } else {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Row(
+                if (inline) Modifier else Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+            ) {
                 if (resolvedShowLabel && label != null) {
                     Box(
                         Modifier
@@ -396,10 +567,17 @@ fun NFormItem(
                     ) { labelContent() }
                 }
                 Column(Modifier.weight(1f)) {
-                    FormItemContent(resolvedSize, status, form?.inline == true, content)
+                    FormItemContent(resolvedSize, status, inline, content)
                     extra?.let { Box(Modifier.fillMaxWidth().padding(top = 2.dp)) { it() } }
                     if (resolvedShowFeedback) {
-                        FormItemFeedback(feedbackLines, status, resolvedSize)
+                        FormItemFeedback(
+                            feedbackLines,
+                            status,
+                            resolvedSize,
+                            inline,
+                            feedbackAlignment,
+                            feedbackColor,
+                        )
                     }
                 }
             }
@@ -447,9 +625,12 @@ private fun FormItemFeedback(
     lines: List<String>,
     status: NStatus?,
     size: NSize,
+    inline: Boolean,
+    alignment: Alignment.Horizontal?,
+    colorOverride: Color?,
 ) {
     val theme = LocalNTheme.current
-    val color = when (status) {
+    val color = colorOverride ?: when (status) {
         NStatus.Error -> theme.colors.error
         NStatus.Warning -> theme.colors.warning
         NStatus.Success -> theme.colors.success
@@ -458,9 +639,10 @@ private fun FormItemFeedback(
     val fontSize = if (size == NSize.Small) 13.sp else theme.typography.fontSize.of(size)
     Column(
         Modifier
-            .fillMaxWidth()
+            .then(if (inline) Modifier else Modifier.fillMaxWidth())
             .heightIn(min = 24.dp)
             .padding(top = 4.dp, start = 2.dp),
+        horizontalAlignment = alignment ?: Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         lines.forEach { line ->

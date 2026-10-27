@@ -13,11 +13,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import cn.enaium.naiveui.components.NSwitch
-import cn.enaium.naiveui.components.NText
-import cn.enaium.naiveui.components.NSpace
 import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.icons.NIcons
+import cn.enaium.naiveui.components.NSpace
+import cn.enaium.naiveui.components.NSwitch
+import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.sample.gallery.DemoSection
 import cn.enaium.naiveui.sample.gallery.DocsPage
 import cn.enaium.naiveui.theme.NSize
@@ -99,6 +99,17 @@ NSwitch(
         DemoSection(
             title = "Loading",
             description = "While loading, the switch shows a spinner and ignores interaction until the async update finishes.",
+            code = """
+var pending by remember { mutableStateOf<Boolean?>(null) }
+LaunchedEffect(pending) {
+    val next = pending ?: return@LaunchedEffect
+    delay(1200)
+    active = next
+    pending = null
+    loading = false
+}
+NSwitch(checked = active, loading = loading, onCheckedChange = { pending = it; loading = true })
+""",
         ) {
             var active by remember { mutableStateOf(false) }
             var loading by remember { mutableStateOf(false) }
@@ -155,7 +166,10 @@ NSwitch(
                 activeText = "Checked",
                 inactiveText = "Unchecked",
                 inlinePrompt = true,
-                railColor = { on -> if (on) androidx.compose.ui.graphics.Color(0xFFD03050) else androidx.compose.ui.graphics.Color(0xFF2080F0) },
+                railColor = { on ->
+                    if (on) androidx.compose.ui.graphics.Color(0xFFD03050)
+                    else androidx.compose.ui.graphics.Color(0xFF2080F0)
+                },
             )
         }
 
@@ -181,6 +195,53 @@ NSwitch(
                     uncheckedIcon = { NIcon(NIcons.Close, size = 14.dp) },
                     size = NSize.Large,
                 )
+            }
+        }
+
+        DemoSection(
+            title = "Customize checked value",
+            description = "checkedValue and uncheckedValue change the value emitted by onValueChange.",
+            code = """
+NSwitch(
+    checked, { checked = it },
+    checkedValue = "Foo",
+    uncheckedValue = "Bar",
+    onValueChange = { emitted = it },
+)
+""",
+        ) {
+            var checked by remember { mutableStateOf(false) }
+            var emitted by remember { mutableStateOf<Any?>(null) }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NSwitch(
+                    checked = checked,
+                    onCheckedChange = { checked = it },
+                    checkedValue = "Foo",
+                    uncheckedValue = "Bar",
+                    onValueChange = { emitted = it },
+                )
+                NText("onValueChange: ${emitted ?: "—"}")
+            }
+        }
+
+        DemoSection(
+            title = "Event",
+            description = "onCheckedChange reports every user driven change.",
+        ) {
+            var active by remember { mutableStateOf(false) }
+            var events by remember { mutableStateOf(listOf<String>()) }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                NSwitch(
+                    checked = active,
+                    onCheckedChange = {
+                        active = it
+                        events = (events + "onCheckedChange: $it").takeLast(3)
+                    },
+                )
+                NText(if (events.isEmpty()) "No events yet" else events.joinToString("  •  "))
             }
         }
     }

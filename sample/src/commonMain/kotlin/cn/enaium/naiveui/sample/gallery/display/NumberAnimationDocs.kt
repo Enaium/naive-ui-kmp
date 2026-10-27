@@ -77,7 +77,7 @@ fun NumberAnimationDocs() {
             }
         }
         DemoSection(
-            title = "Locale",
+            title = "Intl",
             description = "locale picks the grouping and decimal separators, for example de-DE.",
         ) {
             val state = rememberNNumberAnimationState()

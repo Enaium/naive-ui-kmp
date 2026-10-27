@@ -5,6 +5,7 @@ import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.components.NTimeline
 import cn.enaium.naiveui.components.NTimelineItem
 import cn.enaium.naiveui.components.NTimelineLineType
+import cn.enaium.naiveui.components.NTimelinePlacement
 import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.sample.gallery.DemoSection
@@ -85,6 +86,23 @@ fun TimelineDocs() {
             """.trimIndent(),
         ) {
             NTimeline(items = iconItems())
+        }
+
+        DemoSection(
+            title = "Item placement",
+            description = "itemPlacement moves the vertical timeline to the right side of the " +
+                "content. Left is the default.",
+            code = """
+                NTimeline(
+                    itemPlacement = NTimelinePlacement.Right,
+                    items = items,
+                )
+            """.trimIndent(),
+        ) {
+            NTimeline(
+                itemPlacement = NTimelinePlacement.Right,
+                items = basicItems(),
+            )
         }
 
         DemoSection(

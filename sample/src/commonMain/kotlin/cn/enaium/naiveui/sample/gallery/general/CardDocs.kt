@@ -3,6 +3,7 @@ package cn.enaium.naiveui.sample.gallery.general
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,12 +20,17 @@ import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.components.NButton
 import cn.enaium.naiveui.components.NButtonType
 import cn.enaium.naiveui.components.NCard
+import cn.enaium.naiveui.components.NScrollbar
+import cn.enaium.naiveui.components.NSkeleton
+import cn.enaium.naiveui.components.NSkeletonType
+import cn.enaium.naiveui.components.NSpace
+import cn.enaium.naiveui.components.NTabPane
+import cn.enaium.naiveui.components.NTabs
+import cn.enaium.naiveui.components.NTabsType
 import cn.enaium.naiveui.components.NTag
 import cn.enaium.naiveui.components.NText
-import cn.enaium.naiveui.components.NSpace
 import cn.enaium.naiveui.sample.gallery.DemoSection
 import cn.enaium.naiveui.sample.gallery.DocsPage
-import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NSize
 import cn.enaium.naiveui.theme.NStatus
 
@@ -36,7 +42,7 @@ fun CardDocs() {
     ) {
         DemoSection(
             title = "Basic",
-            description = "A basic card with a title.",
+            description = "A basic card with a title and content.",
         ) {
             NCard(title = "Card", modifier = Modifier.width(300.dp)) {
                 NText("Card Content")
@@ -44,23 +50,17 @@ fun CardDocs() {
         }
 
         DemoSection(
-            title = "Title & header extra",
-            description = "The header can carry a title and extra content aligned to the right.",
+            title = "Border",
+            description = "Cards can be used without a border.",
         ) {
-            NCard(
-                title = "Card",
-                modifier = Modifier.width(320.dp),
-                headerExtra = {
-                    NTag(text = "New", type = NStatus.Success, size = NSize.Small)
-                },
-            ) {
+            NCard(title = "Borderless Card", bordered = false, modifier = Modifier.width(300.dp)) {
                 NText("Card Content")
             }
         }
 
         DemoSection(
             title = "Closable",
-            description = "You may need a closable card when using it in a modal.",
+            description = "Closable cards report the close action; the card can be restored from the button.",
         ) {
             var visible by remember { mutableStateOf(true) }
             if (visible) {
@@ -74,6 +74,27 @@ fun CardDocs() {
                 }
             } else {
                 NButton(onClick = { visible = true }) { NText("Show card") }
+            }
+        }
+
+        DemoSection(
+            title = "Content scrollable",
+            description = "Give the body a bounded height and scroll it while the header and footer stay fixed.",
+        ) {
+            NCard(
+                title = "Task List",
+                footer = {
+                    NText("Footer actions stay fixed")
+                },
+                modifier = Modifier.width(340.dp),
+            ) {
+                NScrollbar(Modifier.height(140.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        repeat(20) { index ->
+                            NText("Task ${index + 1}: only the content area scrolls.")
+                        }
+                    }
+                }
             }
         }
 
@@ -96,11 +117,30 @@ fun CardDocs() {
         }
 
         DemoSection(
-            title = "Borderless",
-            description = "Cards can be used without a border.",
+            title = "Custom style",
+            description = "Cards can host custom content such as tabs. `NTabs` supplies its own header and pane padding.",
         ) {
-            NCard(title = "Borderless Card", bordered = false, modifier = Modifier.width(300.dp)) {
-                NText("Card Content")
+            val panes = listOf(
+                NTabPane("PARKLIFE", "PARKLIFE") { NText("PARKLIFE pane") },
+                NTabPane("ROCKLIFE", "ROCKLIFE") { NText("ROCKLIFE pane") },
+            )
+            NCard(modifier = Modifier.width(360.dp)) {
+                NTabs(type = NTabsType.Line, size = NSize.Large, panes = panes)
+            }
+        }
+
+        DemoSection(
+            title = "Embedded",
+            description = "Embedded cards use a darker background so they stand out against the page.",
+        ) {
+            NCard(
+                title = "Embedded Card",
+                embedded = true,
+                bordered = false,
+                modifier = Modifier.width(300.dp),
+            ) {
+                NText("Tonight I'm a rock 'n' roll star")
+                NText("Tonight I'm a rock 'n' roll star")
             }
         }
 
@@ -109,6 +149,51 @@ fun CardDocs() {
             description = "Hoverable cards elevate their shadow on pointer hover.",
         ) {
             NCard(title = "Card", hoverable = true, modifier = Modifier.width(300.dp)) {
+                NText("Card Content")
+            }
+        }
+
+        DemoSection(
+            title = "Loading",
+            description = "Use skeletons to simulate a loading card. The switch-like button toggles the state.",
+        ) {
+            var loading by remember { mutableStateOf(true) }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                NButton(onClick = { loading = !loading }) {
+                    NText(if (loading) "Stop loading" else "Start loading")
+                }
+                NCard(modifier = Modifier.width(340.dp)) {
+                    if (loading) {
+                        NSkeleton(type = NSkeletonType.Text, repeat = 5)
+                    } else {
+                        NText("Lorem ipsum dolor sit amet,")
+                        NText("consectetur adipiscing elit,")
+                        NText("sed do eiusmod tempor incididunt")
+                        NText("ut labore et dolore magna aliqua.")
+                        NText("Ut enim ad minim veniam.")
+                    }
+                }
+            }
+        }
+
+        DemoSection(
+            title = "No title",
+            description = "Nobody said a card must have a title.",
+        ) {
+            NCard(modifier = Modifier.width(300.dp)) {
+                NText("No title")
+            }
+        }
+
+        DemoSection(
+            title = "Segment",
+            description = "`segmented` separates the header and body with a divider.",
+        ) {
+            NCard(
+                title = "Card Segmented Demo",
+                segmented = true,
+                modifier = Modifier.width(320.dp),
+            ) {
                 NText("Card Content")
             }
         }
@@ -131,68 +216,26 @@ fun CardDocs() {
         }
 
         DemoSection(
-            title = "Segmented & embedded",
-            description = "`segmented` separates the header and body; `embedded` uses a slightly darker background.",
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                NCard(title = "Card Segmented Demo", segmented = true, modifier = Modifier.width(320.dp)) {
-                    NText("Card Content")
-                }
-                NCard(
-                    title = "Embedded Card",
-                    embedded = true,
-                    bordered = false,
-                    modifier = Modifier.width(320.dp),
-                ) {
-                    NText("Tonight I'm a rock 'n' roll star")
-                    NText("Tonight I'm a rock 'n' roll star")
-                }
-            }
-        }
-
-        DemoSection(
-            title = "Footer",
-            description = "A footer sits below a divider, typically holding actions.",
+            title = "Slots",
+            description = "The header extra, content and footer slots compose a complete card.",
         ) {
             NCard(
-                title = "Card with Footer",
+                title = "Card Slots Demo",
                 modifier = Modifier.width(360.dp),
+                headerExtra = {
+                    NTag(text = "#header-extra", size = NSize.Small, type = NStatus.Success)
+                },
                 footer = {
                     Row(
                         Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        NButton(text = true) { NText("Cancel") }
-                        NButton(type = NButtonType.Primary) {
-                            NText("Confirm")
-                        }
+                        NText("#footer")
+                        NButton(text = true, type = NButtonType.Primary) { NText("#action") }
                     }
                 },
             ) {
                 NText("Card Content")
-            }
-        }
-
-        DemoSection(
-            title = "Content padding",
-            description = "Content is padded by the card size. Use `segmented` and a full-width box to fill the body edge to edge.",
-        ) {
-            val theme = LocalNTheme.current
-            NCard(
-                title = "Padding",
-                segmented = true,
-                size = NSize.Large,
-                modifier = Modifier.width(320.dp),
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(60.dp)
-                        .background(theme.colors.action),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    NText("Large padding")
-                }
             }
         }
     }

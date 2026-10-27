@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.enaium.naiveui.components.NButton
+import cn.enaium.naiveui.components.NPopover
 import cn.enaium.naiveui.components.NButtonGroup
 import cn.enaium.naiveui.components.NButtonType
 import cn.enaium.naiveui.components.NIconPlacement
@@ -139,12 +140,19 @@ fun ButtonDocs() {
         }
 
         DemoSection(
-            title = "Tag & disabled",
-            description = "Text buttons are handy for links. Disabled buttons ignore clicks.",
+            title = "Tag",
+            description = "Render the button as a different element with the `tag` prop. A text button is the natural stand-in for a link.",
+        ) {
+            NButton(text = true, type = NButtonType.Primary) { NText("Anyway.News") }
+        }
+
+        DemoSection(
+            title = "Disabled",
+            description = "Disabled buttons ignore clicks; pass `tag` when a disabled button must still receive pointer events.",
         ) {
             NSpace(size = 8.dp, align = NAlign.Center, wrap = true) {
-                NButton(text = true, type = NButtonType.Primary) { NText("Anyway.News") }
                 NButton(disabled = true) { NText("Disabled") }
+                NButton(disabled = true, type = NButtonType.Primary) { NText("Primary Disabled") }
             }
         }
 
@@ -249,6 +257,16 @@ fun ButtonDocs() {
             description = "Use a text button with an icon and a larger font size when you only need an icon.",
         ) {
             NButton(text = true) { NIcon(NIcons.More, size = 24.dp) }
+        }
+
+        DemoSection(
+            title = "Popover",
+            description = "A disabled native button does not emit hover events, so the popover listens on the wrapper. " +
+                "Hover the disabled button to show the popover.",
+        ) {
+            NPopover(content = { NText("Lpsum") }) {
+                NButton(disabled = true) { NText("Disabled button as div") }
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 package cn.enaium.naiveui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,24 +16,25 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
-import cn.enaium.naiveui.components.NButton
-import cn.enaium.naiveui.components.NButtonType
-import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.internal.NCloseButton
@@ -43,6 +45,7 @@ import cn.enaium.naiveui.theme.LocalNLocale
 import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NSize
 import cn.enaium.naiveui.theme.NStatus
+import kotlin.math.roundToInt
 
 /** Semantic type of a dialog opened through [NDialogApi]. */
 enum class NDialogType { Default, Info, Success, Warning, Error }
@@ -54,18 +57,44 @@ data class NDialogOptions(
     val type: NDialogType = NDialogType.Default,
     val positiveText: String? = null,
     val negativeText: String? = null,
+    val actionText: String? = null,
     val showIcon: Boolean = true,
     val closable: Boolean = true,
     val maskClosable: Boolean = true,
     val closeOnPositiveClick: Boolean = true,
     val closeOnNegativeClick: Boolean = true,
+    val closeOnEsc: Boolean = true,
+    val draggable: Boolean = false,
     val onPositiveClick: (() -> Unit)? = null,
     val onNegativeClick: (() -> Unit)? = null,
     val onClose: (() -> Unit)? = null,
+    val onMaskClick: (() -> Unit)? = null,
+    val onEsc: (() -> Unit)? = null,
 )
 
-/** Returned by [NDialogApi]; call [close] to dismiss the dialog. */
-class NDialogHandle internal constructor(private val closeAction: () -> Unit) {
+/**
+ * Returned by [NDialogApi]; call [close] to dismiss the dialog.
+ *
+ * [content] and [loading] are reactive: change them while the dialog is open
+ * to update the surface (for example during an async confirmation).
+ */
+class NDialogHandle internal constructor(
+    private val contentState: MutableState<String?>,
+    private val loadingState: MutableState<Boolean>,
+    private val closeAction: () -> Unit,
+) {
+    var content: String?
+        get() = contentState.value
+        set(value) {
+            contentState.value = value
+        }
+
+    var loading: Boolean
+        get() = loadingState.value
+        set(value) {
+            loadingState.value = value
+        }
+
     fun close() = closeAction()
 }
 
@@ -77,8 +106,13 @@ class NDialogHandle internal constructor(private val closeAction: () -> Unit) {
  */
 class NDialogApi internal constructor(
     private val show: (NDialogOptions) -> NDialogHandle,
+    private val list: () -> List<NDialogOptions>,
     private val clear: () -> Unit,
 ) {
+    /** All dialogs currently owned by the provider, oldest first. */
+    val dialogs: List<NDialogOptions>
+        get() = list()
+
     fun create(options: NDialogOptions): NDialogHandle = show(options)
 
     fun create(
@@ -87,6 +121,7 @@ class NDialogApi internal constructor(
         positiveText: String? = null,
         negativeText: String? = null,
         type: NDialogType = NDialogType.Default,
+        actionText: String? = null,
         onPositiveClick: (() -> Unit)? = null,
         onNegativeClick: (() -> Unit)? = null,
     ): NDialogHandle = show(
@@ -96,6 +131,7 @@ class NDialogApi internal constructor(
             type = type,
             positiveText = positiveText,
             negativeText = negativeText,
+            actionText = actionText,
             onPositiveClick = onPositiveClick,
             onNegativeClick = onNegativeClick,
         ),
@@ -179,7 +215,12 @@ val LocalNDialog = staticCompositionLocalOf<NDialogApi?> { null }
 fun rememberNDialog(): NDialogApi =
     LocalNDialog.current ?: error("NDialogProvider is required to use NDialogApi")
 
-private data class NDialogEntry(val id: Long, val options: NDialogOptions)
+private class NDialogEntry(
+    val id: Long,
+    val options: NDialogOptions,
+    val contentState: MutableState<String?>,
+    val loadingState: MutableState<Boolean>,
+)
 
 /**
  * Hosts the imperative dialog API. Wrap the application content with it and
@@ -193,9 +234,14 @@ fun NDialogProvider(content: @Composable () -> Unit) {
         NDialogApi(
             show = { options ->
                 val id = nextId++
-                entries.add(NDialogEntry(id, options))
-                NDialogHandle { entries.removeAll { it.id == id } }
+                val contentState = mutableStateOf(options.content)
+                val loadingState = mutableStateOf(false)
+                entries.add(NDialogEntry(id, options, contentState, loadingState))
+                NDialogHandle(contentState, loadingState) {
+                    entries.removeAll { it.id == id }
+                }
             },
+            list = { entries.map { it.options } },
             clear = { entries.clear() },
         )
     }
@@ -214,9 +260,16 @@ private fun NDialogHost(entries: List<NDialogEntry>, onClose: (Long) -> Unit) {
         top.options.onClose?.invoke()
         onClose(top.id)
     }
+    val onScrimClick = {
+        top.options.onMaskClick?.invoke()
+        if (top.options.maskClosable) closeTop()
+    }
     Popup(
         popupPositionProvider = remember { NWindowPopupPositionProvider() },
-        onDismissRequest = closeTop,
+        onDismissRequest = {
+            top.options.onEsc?.invoke()
+            if (top.options.closeOnEsc) closeTop()
+        },
         properties = PopupProperties(
             focusable = true,
             dismissOnBackPress = true,
@@ -233,7 +286,7 @@ private fun NDialogHost(entries: List<NDialogEntry>, onClose: (Long) -> Unit) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .nOverlayScrimClick(top.options.maskClosable, closeTop),
+                    .nOverlayScrimClick(true, onScrimClick),
                 contentAlignment = Alignment.Center,
             ) {
                 NScrollbar(Modifier.heightIn(max = stackMaxHeight)) {
@@ -244,7 +297,38 @@ private fun NDialogHost(entries: List<NDialogEntry>, onClose: (Long) -> Unit) {
                     ) {
                         entries.forEach { entry ->
                             key(entry.id) {
-                                NDialogCard(entry, dialogWidth) { onClose(entry.id) }
+                                NDialogSurface(
+                                    width = dialogWidth,
+                                    title = entry.options.title,
+                                    content = entry.contentState.value,
+                                    type = entry.options.type,
+                                    showIcon = entry.options.showIcon,
+                                    closable = entry.options.closable,
+                                    positiveText = entry.options.positiveText,
+                                    negativeText = entry.options.negativeText,
+                                    actionText = entry.options.actionText,
+                                    loading = entry.loadingState.value,
+                                    showPositive = entry.options.positiveText != null ||
+                                        entry.options.onPositiveClick != null ||
+                                        entry.options.type != NDialogType.Default,
+                                    showNegative = entry.options.negativeText != null ||
+                                        entry.options.onNegativeClick != null,
+                                    draggable = entry.options.draggable,
+                                    onPositiveClick = {
+                                        entry.options.onPositiveClick?.invoke()
+                                        if (entry.options.closeOnPositiveClick && !entry.loadingState.value) {
+                                            onClose(entry.id)
+                                        }
+                                    },
+                                    onNegativeClick = {
+                                        entry.options.onNegativeClick?.invoke()
+                                        if (entry.options.closeOnNegativeClick) onClose(entry.id)
+                                    },
+                                    onClose = {
+                                        entry.options.onClose?.invoke()
+                                        onClose(entry.id)
+                                    },
+                                )
                             }
                         }
                     }
@@ -254,53 +338,119 @@ private fun NDialogHost(entries: List<NDialogEntry>, onClose: (Long) -> Unit) {
     }
 }
 
+/**
+ * Inline dialog surface, equivalent to using `<n-dialog>` as a component.
+ */
 @Composable
-private fun NDialogCard(entry: NDialogEntry, width: Dp, onClose: () -> Unit) {
-    val options = entry.options
+fun NDialog(
+    title: String? = null,
+    content: String? = null,
+    positiveText: String? = null,
+    negativeText: String? = null,
+    type: NDialogType = NDialogType.Default,
+    showIcon: Boolean = true,
+    closable: Boolean = true,
+    actionText: String? = null,
+    modifier: Modifier = Modifier,
+    onPositiveClick: (() -> Unit)? = null,
+    onNegativeClick: (() -> Unit)? = null,
+    onClose: (() -> Unit)? = null,
+) {
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        NDialogSurface(
+            width = 400.dp,
+            title = title,
+            content = content,
+            type = type,
+            showIcon = showIcon,
+            closable = closable,
+            positiveText = positiveText,
+            negativeText = negativeText,
+            actionText = actionText,
+            loading = false,
+            showPositive = positiveText != null,
+            showNegative = negativeText != null,
+            onPositiveClick = { onPositiveClick?.invoke() },
+            onNegativeClick = { onNegativeClick?.invoke() },
+            onClose = { onClose?.invoke() },
+        )
+    }
+}
+
+@Composable
+private fun NDialogSurface(
+    width: Dp,
+    title: String?,
+    content: String?,
+    type: NDialogType,
+    showIcon: Boolean,
+    closable: Boolean,
+    positiveText: String?,
+    negativeText: String?,
+    actionText: String?,
+    loading: Boolean,
+    showPositive: Boolean,
+    showNegative: Boolean,
+    onPositiveClick: () -> Unit,
+    onNegativeClick: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    draggable: Boolean = false,
+) {
     val theme = LocalNTheme.current
     val locale = LocalNLocale.current
     val shape = RoundedCornerShape(theme.borderRadius)
-    val status = options.type.status()
-    val showPositive = options.positiveText != null ||
-        options.onPositiveClick != null ||
-        options.type != NDialogType.Default
-    val showNegative = options.negativeText != null || options.onNegativeClick != null
-    val dismiss = {
-        options.onClose?.invoke()
-        onClose()
+    val status = type.status()
+    var dragOffset by remember { mutableStateOf(IntOffset.Zero) }
+    val dragModifier = if (draggable) {
+        Modifier.pointerInput(Unit) {
+            detectDragGestures { change, drag ->
+                change.consume()
+                dragOffset = IntOffset(
+                    dragOffset.x + drag.x.roundToInt(),
+                    dragOffset.y + drag.y.roundToInt(),
+                )
+            }
+        }
+    } else {
+        Modifier
     }
 
     Column(
-        Modifier
+        modifier
             .width(width)
+            .nShadow(theme, 3, shape)
             .clip(shape)
             .background(theme.colors.modal, shape)
-            .nShadow(theme, 3, shape)
             .nBorder(theme.colors.border, 1.dp, theme.borderRadius)
             .nConsumeClicks()
-            .padding(20.dp),
+            .padding(20.dp)
+            .graphicsLayer {
+                translationX = dragOffset.x.toFloat()
+                translationY = dragOffset.y.toFloat()
+            },
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (options.title != null || options.closable) {
+        if (title != null || closable) {
             Row(
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().then(dragModifier),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (options.showIcon) {
+                if (showIcon) {
                     NIcon(
-                        icon = options.type.icon(),
+                        icon = type.icon(),
                         size = 22.dp,
-                        color = if (options.type == NDialogType.Default) {
+                        color = if (type == NDialogType.Default) {
                             theme.colors.primary
                         } else {
                             theme.colors.statusColor(status)
                         },
                     )
                 }
-                if (options.title != null) {
+                if (title != null) {
                     NText(
-                        text = options.title,
+                        text = title,
                         modifier = Modifier.weight(1f),
                         size = theme.typography.fontSize.huge,
                         strong = true,
@@ -309,45 +459,49 @@ private fun NDialogCard(entry: NDialogEntry, width: Dp, onClose: () -> Unit) {
                 } else {
                     Spacer(Modifier.weight(1f))
                 }
-                if (options.closable) {
-                    NCloseButton(onClick = dismiss, size = 20.dp, iconSize = 14.dp)
+                if (closable) {
+                    NCloseButton(onClick = onClose, size = 20.dp, iconSize = 14.dp)
                 }
             }
         }
-        if (options.content != null) {
+        if (content != null) {
             NText(
-                text = options.content,
+                text = content,
                 color = theme.colors.text3,
                 size = theme.typography.fontSize.medium,
             )
         }
-        if (showPositive || showNegative) {
+        if (actionText != null) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NText(
+                    text = actionText,
+                    color = theme.colors.text2,
+                    size = theme.typography.fontSize.medium,
+                )
+            }
+        } else if (showPositive || showNegative) {
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (showNegative) {
-                    NButton(
-                        size = NSize.Small,
-                        onClick = {
-                            options.onNegativeClick?.invoke()
-                            if (options.closeOnNegativeClick) onClose()
-                        },
-                    ) {
-                        NText(options.negativeText ?: locale.cancel)
+                    NButton(size = NSize.Small, onClick = onNegativeClick) {
+                        NText(negativeText ?: locale.cancel)
                     }
                 }
                 if (showPositive) {
                     NButton(
                         size = NSize.Small,
                         type = NButtonType.Primary,
-                        onClick = {
-                            options.onPositiveClick?.invoke()
-                            if (options.closeOnPositiveClick) onClose()
-                        },
+                        loading = loading,
+                        onClick = onPositiveClick,
                     ) {
-                        NText(options.positiveText ?: locale.ok)
+                        NText(positiveText ?: locale.ok)
                     }
                 }
             }

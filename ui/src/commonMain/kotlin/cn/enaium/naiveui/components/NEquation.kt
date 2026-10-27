@@ -73,7 +73,11 @@ private val nMathSymbols: Map<String, String> = mapOf(
  * and text runs. Unknown commands render as their literal name, and the
  * component never throws.
  */
-private class NMathParser(private val source: String) {
+private class NMathParser(
+    private val source: String,
+    private val macros: Map<String, String> = emptyMap(),
+    private val macroStack: Set<String> = emptySet(),
+) {
     private var position = 0
 
     fun parse(): NMathNode = NMathRow(parseExpression(stopAtBrace = false).trimSpaces())
@@ -289,7 +293,16 @@ private class NMathParser(private val source: String) {
             "quad" -> NMathText("\u2003")
             "qquad" -> NMathText("\u2003\u2003")
             "enspace" -> NMathText("\u2002")
-            else -> NMathText(nMathSymbols[name] ?: name)
+            else -> {
+                val symbol = nMathSymbols[name]
+                val expansion = macros[name]
+                when {
+                    symbol != null -> NMathText(symbol)
+                    expansion != null && name !in macroStack ->
+                        NMathParser(expansion, macros, macroStack + name).parse()
+                    else -> NMathText(name)
+                }
+            }
         }
     }
 }
@@ -457,11 +470,13 @@ fun NEquation(
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
     fontSize: TextUnit = 18.sp,
+    displayMode: Boolean = false,
+    macros: Map<String, String> = emptyMap(),
 ) {
     val theme = LocalNTheme.current
     val resolvedColor = if (color == Color.Unspecified) theme.colors.text1 else color
-    val root = remember(value) {
-        runCatching { NMathParser(value).parse() }
+    val root = remember(value, macros) {
+        runCatching { NMathParser(value, macros).parse() }
             .getOrElse { NMathRow(listOf(NMathText(value))) }
     }
     val style = NMathRenderStyle(resolvedColor, fontSize)
@@ -477,7 +492,7 @@ fun NEquation(
         }
     }
     segments += current
-    Box(modifier) {
+    val content: @Composable () -> Unit = {
         if (segments.size <= 1) {
             NMathNodeContent(NMathRow(segments.firstOrNull().orEmpty()), style)
         } else {
@@ -485,5 +500,10 @@ fun NEquation(
                 segments.forEach { NMathNodeContent(NMathRow(it), style) }
             }
         }
+    }
+    if (displayMode) {
+        Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { content() }
+    } else {
+        Box(modifier) { content() }
     }
 }

@@ -69,8 +69,8 @@ NList(
         }
 
         DemoSection(
-            title = "Hoverable and clickable",
-            description = "Hoverable applies a hover background. Pass onClick to an item to make it interactive and clickable to opt into the click affordance.",
+            title = "Hoverable",
+            description = "Hoverable applies a hover background. Pass onClick to an item to make it interactive; clickable shows a hand cursor and enables press feedback.",
             code = """
 NList(hoverable = true, clickable = true) {
     NListItem(onClick = { count++ }) {
@@ -116,7 +116,7 @@ NList(hoverable = true, clickable = true) {
         }
 
         DemoSection(
-            title = "Bordered",
+            title = "Border",
             description = "The bordered variant adds an outer border and inner padding. Disable showDivider to remove lines between items.",
             code = """
 NList(bordered = true) { ... }

@@ -34,17 +34,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import cn.enaium.naiveui.components.NTag
-import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.icons.NIcons
+import cn.enaium.naiveui.internal.NClearButton
 import cn.enaium.naiveui.internal.NPlacement
 import cn.enaium.naiveui.internal.NPopoverSurface
 import cn.enaium.naiveui.internal.NScrollbar
 import cn.enaium.naiveui.internal.NTrigger
-import cn.enaium.naiveui.internal.NClearButton
 import cn.enaium.naiveui.internal.nBorder
-import cn.enaium.naiveui.internal.nClickable
+import cn.enaium.naiveui.internal.nTapTrigger
 import cn.enaium.naiveui.theme.LocalNLocale
 import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NSize
@@ -63,7 +61,8 @@ data class NPopselectOption(
  *
  * Single selection uses [value]/[onValueChange]; when [multiple] is set,
  * [values]/[onValuesChange] are used instead and long selections are folded
- * into a `+N` tag after [maxTagCount] entries.
+ * into a `+N` tag after [maxTagCount] entries. Pass [children] for a fully
+ * custom trigger, and [header]/[empty]/[action] to extend the menu.
  */
 @Composable
 fun NPopselect(
@@ -78,10 +77,16 @@ fun NPopselect(
     placement: NPlacement = NPlacement.BottomStart,
     maxTagCount: Int = Int.MAX_VALUE,
     width: Dp = 180.dp,
+    maxHeight: Dp = 240.dp,
     size: NSize? = null,
     placeholder: String? = null,
     disabled: Boolean = false,
     clearable: Boolean = true,
+    cancelable: Boolean = false,
+    header: (@Composable () -> Unit)? = null,
+    empty: (@Composable () -> Unit)? = null,
+    action: (@Composable () -> Unit)? = null,
+    children: (@Composable () -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
     val locale = LocalNLocale.current
@@ -122,7 +127,7 @@ fun NPopselect(
     }
 
     val triggerModifier = when (trigger) {
-        NTrigger.Click, NTrigger.Focus -> Modifier.nClickable(interaction, enabled = !disabled) {
+        NTrigger.Click, NTrigger.Focus -> Modifier.nTapTrigger(enabled = !disabled) {
             visible = !visible
         }
         NTrigger.Hover -> Modifier.hoverable(interaction, enabled = !disabled)
@@ -139,7 +144,11 @@ fun NPopselect(
                 }
                 onValuesChange(next)
             } else {
-                onValueChange(option.value)
+                if (cancelable && selectedValues.contains(option.value)) {
+                    onValueChange(null)
+                } else {
+                    onValueChange(option.value)
+                }
                 visible = false
             }
         }
@@ -149,57 +158,61 @@ fun NPopselect(
     }
 
     Box(modifier) {
-        Row(
-            Modifier
-                .height(height)
-                .then(if (disabled) Modifier.alpha(theme.opacityDisabled) else Modifier)
-                .clip(shape)
-                .background(theme.colors.input)
-                .nBorder(borderColor, 1.dp, theme.borderRadius)
-                .then(triggerModifier)
-                .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
+        if (children != null) {
+            Box(triggerModifier) { children() }
+        } else {
             Row(
-                Modifier.weight(1f).clipToBounds(),
+                Modifier
+                    .height(height)
+                    .then(if (disabled) Modifier.alpha(theme.opacityDisabled) else Modifier)
+                    .clip(shape)
+                    .background(theme.colors.input)
+                    .nBorder(borderColor, 1.dp, theme.borderRadius)
+                    .then(triggerModifier)
+                    .padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                if (selectedLabels.isEmpty()) {
-                    NText(
-                        text = placeholder ?: locale.placeholder,
-                        color = theme.colors.placeholder,
-                        size = theme.fontSizeFor(resolvedSize),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                } else if (multiple) {
-                    selectedLabels.take(maxTagCount.coerceAtLeast(0)).forEach { label ->
-                        NTag(text = label, size = NSize.Small)
+                Row(
+                    Modifier.weight(1f).clipToBounds(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (selectedLabels.isEmpty()) {
+                        NText(
+                            text = placeholder ?: locale.placeholder,
+                            color = theme.colors.placeholder,
+                            size = theme.fontSizeFor(resolvedSize),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    } else if (multiple) {
+                        selectedLabels.take(maxTagCount.coerceAtLeast(0)).forEach { label ->
+                            NTag(text = label, size = NSize.Small)
+                        }
+                        if (maxTagCount >= 0 && selectedLabels.size > maxTagCount) {
+                            NTag(text = "+${selectedLabels.size - maxTagCount}", size = NSize.Small)
+                        }
+                    } else {
+                        NText(
+                            text = selectedLabels.first(),
+                            color = theme.colors.text2,
+                            size = theme.fontSizeFor(resolvedSize),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
-                    if (maxTagCount >= 0 && selectedLabels.size > maxTagCount) {
-                        NTag(text = "+${selectedLabels.size - maxTagCount}", size = NSize.Small)
-                    }
-                } else {
-                    NText(
-                        text = selectedLabels.first(),
-                        color = theme.colors.text2,
-                        size = theme.fontSizeFor(resolvedSize),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                 }
+                if (clearable && selectedLabels.isNotEmpty() && hovered && !disabled) {
+                    NClearButton(onClick = clearSelection, size = 16.dp, iconSize = 10.dp)
+                }
+                NIcon(
+                    icon = NIcons.ChevronDown,
+                    modifier = Modifier.rotate(chevronRotation),
+                    size = 14.dp,
+                    color = theme.colors.icon,
+                )
             }
-            if (clearable && selectedLabels.isNotEmpty() && hovered && !disabled) {
-                NClearButton(onClick = clearSelection, size = 16.dp, iconSize = 10.dp)
-            }
-            NIcon(
-                icon = NIcons.ChevronDown,
-                modifier = Modifier.rotate(chevronRotation),
-                size = 14.dp,
-                color = theme.colors.icon,
-            )
         }
 
         NPopoverSurface(
@@ -211,74 +224,92 @@ fun NPopselect(
             dismissOnClickOutside = true,
             padding = PaddingValues(vertical = 4.dp),
         ) {
-            if (options.isEmpty()) {
-                Box(
-                    Modifier
-                        .width(width)
-                        .hoverable(menuInteraction, enabled = trigger == NTrigger.Hover)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    NText(
-                        text = locale.popselectNoData,
-                        color = theme.colors.text3,
-                        size = theme.typography.fontSize.medium,
-                    )
+            Column(
+                Modifier
+                    .width(width)
+                    .hoverable(menuInteraction, enabled = trigger == NTrigger.Hover),
+            ) {
+                if (header != null) {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        header()
+                    }
+                    NPopselectDivider(theme.colors.divider)
                 }
-            } else {
-                NScrollbar(
-                    Modifier
-                        .heightIn(max = 240.dp)
-                        .hoverable(menuInteraction, enabled = trigger == NTrigger.Hover),
-                ) {
-                    Column(Modifier.width(width)) {
-                        options.forEach { option ->
-                            key(option.value) {
-                                val optionInteraction = remember { MutableInteractionSource() }
-                                val optionHovered by optionInteraction.collectIsHoveredAsState()
-                                val selected = selectedValues.contains(option.value)
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .height(34.dp)
-                                        .background(
-                                            if (optionHovered && !option.disabled) {
-                                                theme.colors.hover
-                                            } else {
-                                                Color.Transparent
+                if (options.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
+                        if (empty != null) {
+                            empty()
+                        } else {
+                            NText(
+                                text = locale.popselectNoData,
+                                color = theme.colors.text3,
+                                size = theme.typography.fontSize.medium,
+                            )
+                        }
+                    }
+                } else {
+                    NScrollbar(Modifier.heightIn(max = maxHeight)) {
+                        Column(Modifier.fillMaxWidth()) {
+                            options.forEach { option ->
+                                key(option.value) {
+                                    val optionInteraction = remember { MutableInteractionSource() }
+                                    val optionHovered by optionInteraction.collectIsHoveredAsState()
+                                    val selected = selectedValues.contains(option.value)
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .height(34.dp)
+                                            .background(
+                                                if (optionHovered && !option.disabled) {
+                                                    theme.colors.hover
+                                                } else {
+                                                    Color.Transparent
+                                                },
+                                            )
+                                            .hoverable(optionInteraction, enabled = !option.disabled)
+                                            .nTapTrigger(enabled = !option.disabled) {
+                                                pick(option)
+                                            }
+                                            .padding(horizontal = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        NText(
+                                            text = option.label,
+                                            modifier = Modifier.weight(1f),
+                                            color = when {
+                                                option.disabled -> theme.colors.textDisabled
+                                                selected -> theme.colors.primary
+                                                else -> theme.colors.text2
                                             },
+                                            size = theme.typography.fontSize.medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                         )
-                                        .hoverable(optionInteraction, enabled = !option.disabled)
-                                        .nClickable(optionInteraction, enabled = !option.disabled) {
-                                            pick(option)
+                                        if (selected) {
+                                            NIcon(
+                                                icon = NIcons.Checkmark,
+                                                size = 16.dp,
+                                                color = theme.colors.primary,
+                                            )
                                         }
-                                        .padding(horizontal = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    NText(
-                                        text = option.label,
-                                        modifier = Modifier.weight(1f),
-                                        color = when {
-                                            option.disabled -> theme.colors.textDisabled
-                                            selected -> theme.colors.primary
-                                            else -> theme.colors.text2
-                                        },
-                                        size = theme.typography.fontSize.medium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    if (selected) {
-                                        NIcon(
-                                            icon = NIcons.Checkmark,
-                                            size = 16.dp,
-                                            color = theme.colors.primary,
-                                        )
                                     }
                                 }
                             }
                         }
                     }
                 }
+                if (action != null) {
+                    NPopselectDivider(theme.colors.divider)
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        action()
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun NPopselectDivider(color: Color) {
+    Box(Modifier.fillMaxWidth().height(1.dp).background(color))
 }

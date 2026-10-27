@@ -5,14 +5,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import cn.enaium.naiveui.components.NButton
-import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.components.NAlign
+import cn.enaium.naiveui.components.NButton
 import cn.enaium.naiveui.components.NJustify
 import cn.enaium.naiveui.components.NSpace
+import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.sample.gallery.DemoSection
 import cn.enaium.naiveui.sample.gallery.DocsPage
 import cn.enaium.naiveui.theme.NSize
@@ -47,8 +51,60 @@ fun SpaceDocs() {
         }
 
         DemoSection(
+            title = "Center",
+            description = "Center children on the main axis with `justify = NJustify.Center`.",
+        ) {
+            NSpace(justify = NJustify.Center, modifier = Modifier.fillMaxWidth()) {
+                repeat(3) { NButton { NText("Oops!") } }
+            }
+        }
+
+        DemoSection(
+            title = "From end",
+            description = "Push children to the end of the row with `justify = NJustify.End`.",
+        ) {
+            NSpace(justify = NJustify.End, modifier = Modifier.fillMaxWidth()) {
+                repeat(3) { NButton { NText("Oops!") } }
+            }
+        }
+
+        DemoSection(
+            title = "Space between",
+            description = "`NJustify.SpaceBetween` puts the first and last child at the edges.",
+        ) {
+            NSpace(justify = NJustify.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                repeat(3) { NButton { NText("Oops!") } }
+            }
+        }
+
+        DemoSection(
+            title = "Space around",
+            description = "`NJustify.SpaceAround` adds equal space around every child.",
+        ) {
+            NSpace(justify = NJustify.SpaceAround, modifier = Modifier.fillMaxWidth()) {
+                repeat(3) { NButton { NText("Oops!") } }
+            }
+        }
+
+        DemoSection(
+            title = "Reverse",
+            description = "Flip the child order at runtime. Space lays children out in the order it receives them.",
+        ) {
+            var reversed by remember { mutableStateOf(false) }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                NButton(onClick = { reversed = !reversed }) {
+                    NText(if (reversed) "Show 1 2 3" else "Show 3 2 1")
+                }
+                NSpace {
+                    val items = if (reversed) listOf(3, 2, 1) else listOf(1, 2, 3)
+                    items.forEach { value -> NButton { NText("$value") } }
+                }
+            }
+        }
+
+        DemoSection(
             title = "Size",
-            description = "Control the gap with `size`, and use `verticalSize` for a separate row gap when wrapping.",
+            description = "Control the gap with `size`.",
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 NSpace(size = 4.dp) {
@@ -74,40 +130,12 @@ fun SpaceDocs() {
         }
 
         DemoSection(
-            title = "Align & justify",
-            description = "`justify` distributes items on the main axis, `align` controls the cross axis.",
-        ) {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                NSpace(justify = NJustify.Center, modifier = Modifier.fillMaxWidth()) {
-                    repeat(3) { NButton { NText("Center") } }
-                }
-                NSpace(justify = NJustify.End, modifier = Modifier.fillMaxWidth()) {
-                    repeat(3) { NButton { NText("End") } }
-                }
-                NSpace(justify = NJustify.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    repeat(3) { NButton { NText("Between") } }
-                }
-                NSpace(
-                    justify = NJustify.SpaceAround,
-                    size = 16.dp,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    repeat(3) { NButton { NText("Around") } }
-                }
-                NSpace(align = NAlign.Center, size = 12.dp) {
-                    NButton(size = NSize.Tiny) { NText("Tiny") }
-                    NButton(size = NSize.Large) { NText("Large") }
-                }
-            }
-        }
-
-        DemoSection(
             title = "Inline",
             description = "A space can sit inline with surrounding text instead of starting a new block.",
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 NText("Tags:")
-                NSpace(size = 6.dp, wrap = true) {
+                NSpace(size = 6.dp, align = NAlign.Center, wrap = true) {
                     NButton(size = NSize.Small) { NText("Alpha") }
                     NButton(size = NSize.Small) { NText("Beta") }
                     NButton(size = NSize.Small) { NText("Gamma") }

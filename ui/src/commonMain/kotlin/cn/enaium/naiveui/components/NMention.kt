@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.internal.NBaseLoading
 import cn.enaium.naiveui.internal.NBaseText
+import cn.enaium.naiveui.internal.NPlacement
 import cn.enaium.naiveui.internal.NPopoverSurface
 import cn.enaium.naiveui.internal.NScrollbar
 import cn.enaium.naiveui.internal.nClickable
@@ -51,6 +53,20 @@ data class NMentionOption(
     val disabled: Boolean = false,
 )
 
+/** Imperative handle for [NMention], mirroring focus/blur instance methods. */
+class NMentionController {
+    internal var focusAction: (() -> Unit)? = null
+    internal var blurAction: (() -> Unit)? = null
+
+    fun focus() {
+        focusAction?.invoke()
+    }
+
+    fun blur() {
+        blurAction?.invoke()
+    }
+}
+
 /**
  * Mention input, ported from naive-ui's `n-mention`.
  *
@@ -66,21 +82,32 @@ fun NMention(
     options: List<NMentionOption> = emptyList(),
     prefix: String = "@",
     placeholder: String = "",
+    type: NInputType = NInputType.Text,
+    minLines: Int = 3,
+    maxLines: Int = Int.MAX_VALUE,
     disabled: Boolean = false,
     size: NSize? = null,
     status: NStatus? = null,
     loading: Boolean = false,
+    controller: NMentionController? = null,
+    renderOption: (@Composable (NMentionOption) -> Unit)? = null,
     onSelect: ((NMentionOption) -> Unit)? = null,
     onSearch: ((pattern: String, prefix: String) -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
     val resolvedSize = nSize(size)
     val density = LocalDensity.current
+    val inputController = remember { NInputController() }
     var focused by remember { mutableStateOf(false) }
     var dismissed by remember { mutableStateOf(false) }
     var suppressed by remember { mutableStateOf(false) }
     var highlighted by remember { mutableStateOf(0) }
     var anchorWidth by remember { mutableStateOf(0) }
+
+    SideEffect {
+        controller?.focusAction = { inputController.focus() }
+        controller?.blurAction = { inputController.blur() }
+    }
 
     val triggerIndex = value.lastIndexOf(prefix)
     val search = if (triggerIndex >= 0) value.substring(triggerIndex + prefix.length) else ""
@@ -91,8 +118,8 @@ fun NMention(
         options.filter { option ->
             (option.prefix == null || option.prefix == prefix) &&
                 (search.isEmpty() ||
-                    option.label.contains(search, ignoreCase = true) ||
-                    option.value.contains(search, ignoreCase = true))
+                    option.value.contains(search, ignoreCase = true) ||
+                    option.label.contains(search, ignoreCase = true))
         }
     } else {
         emptyList()
@@ -158,9 +185,13 @@ fun NMention(
             },
             modifier = Modifier.fillMaxWidth(),
             placeholder = placeholder,
+            type = type,
+            minLines = minLines,
+            maxLines = maxLines,
             disabled = disabled,
             size = size,
             status = status,
+            controller = inputController,
             onFocus = {
                 focused = true
                 dismissed = false
@@ -171,7 +202,7 @@ fun NMention(
         NPopoverSurface(
             visible = visible,
             onDismiss = { dismissed = true },
-            placement = cn.enaium.naiveui.internal.NPlacement.BottomStart,
+            placement = NPlacement.BottomStart,
             offset = IntOffset(0, 4),
             focusable = false,
             padding = PaddingValues(4.dp),
@@ -202,8 +233,7 @@ fun NMention(
                                     .clip(RoundedCornerShape(theme.borderRadiusSmall))
                                     .background(
                                         when {
-                                            selected -> theme.colors.hover
-                                            hovered -> theme.colors.hover
+                                            selected || hovered -> theme.colors.hover
                                             else -> theme.colors.popover
                                         },
                                     )
@@ -211,13 +241,18 @@ fun NMention(
                                     .nClickable(interaction, enabled = !option.disabled) { choose(option) }
                                     .padding(horizontal = 12.dp, vertical = 8.dp),
                             ) {
-                                NBaseText(
-                                    text = option.label,
-                                    style = theme.typography.style(
-                                        theme.fontSizeFor(resolvedSize),
-                                        color = if (option.disabled) theme.colors.textDisabled else theme.colors.text2,
-                                    ),
-                                )
+                                val render = renderOption
+                                if (render != null) {
+                                    render(option)
+                                } else {
+                                    NBaseText(
+                                        text = option.label,
+                                        style = theme.typography.style(
+                                            theme.fontSizeFor(resolvedSize),
+                                            color = if (option.disabled) theme.colors.textDisabled else theme.colors.text2,
+                                        ),
+                                    )
+                                }
                             }
                         }
                     }
@@ -226,4 +261,3 @@ fun NMention(
         }
     }
 }
-

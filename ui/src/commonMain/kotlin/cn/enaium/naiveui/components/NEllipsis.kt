@@ -40,6 +40,7 @@ fun NEllipsis(
     tooltip: Boolean = true,
     expandTrigger: NEllipsisExpandTrigger = NEllipsisExpandTrigger.Click,
     tooltipMaxWidth: Dp = 360.dp,
+    tooltipContent: (@Composable () -> Unit)? = null,
     content: (@Composable () -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
@@ -98,16 +99,45 @@ fun NEllipsis(
             padding = PaddingValues(8.dp),
         ) {
             Box(Modifier.widthIn(max = tooltipMaxWidth)) {
-                BasicText(
-                    text = text,
-                    style = TextStyle(
-                        color = theme.colors.text2,
-                        fontSize = theme.typography.fontSize.medium,
-                        lineHeight = theme.typography.fontSize.medium * theme.typography.lineHeight,
-                        fontFamily = theme.typography.fontFamily,
-                    ),
-                )
+                if (tooltipContent != null) {
+                    tooltipContent()
+                } else {
+                    BasicText(
+                        text = text,
+                        style = TextStyle(
+                            color = theme.colors.text2,
+                            fontSize = theme.typography.fontSize.medium,
+                            lineHeight = theme.typography.fontSize.medium * theme.typography.lineHeight,
+                            fontFamily = theme.typography.fontFamily,
+                        ),
+                    )
+                }
             }
         }
     }
+}
+
+/**
+ * Ellipsis variant intended for long lists.
+ *
+ * It shares [NEllipsis]'s rendering pipeline and adds no per-item tooltip
+ * composition until hover, which keeps large lists cheap to lay out.
+ */
+@Composable
+fun NPerformantEllipsis(
+    text: String,
+    modifier: Modifier = Modifier,
+    lineClamp: Int? = null,
+    tooltip: Boolean = true,
+    tooltipMaxWidth: Dp = 360.dp,
+    content: (@Composable () -> Unit)? = null,
+) {
+    NEllipsis(
+        text = text,
+        modifier = modifier,
+        lineClamp = lineClamp,
+        tooltip = tooltip,
+        tooltipMaxWidth = tooltipMaxWidth,
+        content = content,
+    )
 }

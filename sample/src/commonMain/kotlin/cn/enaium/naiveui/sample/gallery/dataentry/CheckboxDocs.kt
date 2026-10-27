@@ -12,17 +12,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.dp
+import cn.enaium.naiveui.components.NButton
 import cn.enaium.naiveui.components.NCheckbox
 import cn.enaium.naiveui.components.NCheckboxGroup
-import cn.enaium.naiveui.components.NButton
-import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.components.NSpace
+import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.sample.gallery.DemoSection
 import cn.enaium.naiveui.sample.gallery.DocsPage
 import cn.enaium.naiveui.theme.NSize
 
 private val fruits = listOf("Apple", "Banana", "Orange", "Mango")
+private val cities = listOf("Beijing", "Shanghai", "Guangzhou", "Shenzhen")
 
 @Composable
 fun CheckboxDocs() {
@@ -79,7 +81,7 @@ NCheckbox(checked, { checked = it }, disabled = disabled, label = "Checkbox")
         }
 
         DemoSection(
-            title = "Checkbox group",
+            title = "Group",
             description = "Wrap checkboxes in a group to manage the selected values together. Each checkbox identifies itself with a value.",
             code = """
 var cities by remember { mutableStateOf<List<Any>>(emptyList()) }
@@ -90,22 +92,21 @@ NCheckboxGroup(cities, { cities = it }) {
 }
 """,
         ) {
-            var cities by remember { mutableStateOf<List<Any>>(emptyList()) }
+            var selected by remember { mutableStateOf<List<Any>>(emptyList()) }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                NCheckboxGroup(cities, { cities = it }) {
-                    NCheckbox(checked = false, value = "Beijing", label = "Beijing")
-                    NCheckbox(checked = false, value = "Shanghai", label = "Shanghai")
-                    NCheckbox(checked = false, value = "Guangzhou", label = "Guangzhou")
-                    NCheckbox(checked = false, value = "Shenzhen", label = "Shenzhen")
+                NCheckboxGroup(selected, { selected = it }) {
+                    cities.forEach { city ->
+                        NCheckbox(checked = false, value = city, label = city)
+                    }
                 }
                 NText(
-                    if (cities.isEmpty()) "Nothing selected" else "Selected: ${cities.joinToString(", ")}",
+                    if (selected.isEmpty()) "Nothing selected" else "Selected: ${selected.joinToString(", ")}",
                 )
             }
         }
 
         DemoSection(
-            title = "Options and limits",
+            title = "Options",
             description = "Render a group from an option list and clamp the selection with min and max.",
         ) {
             var selection by remember { mutableStateOf<List<Any>>(emptyList()) }
@@ -124,9 +125,7 @@ NCheckboxGroup(cities, { cities = it }) {
             description = "Checkboxes can be arranged in any layout, for example a two column grid.",
         ) {
             var selected by remember { mutableStateOf<List<Any>>(emptyList()) }
-            val items = listOf(
-                "Pushes Open", "The Window", "And Raises", "The Spyglass",
-            )
+            val items = listOf("Pushes Open", "The Window", "And Raises", "The Spyglass")
             NCheckboxGroup(selected, { selected = it }) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items.chunked(2).forEach { rowItems ->
@@ -174,8 +173,68 @@ NCheckbox(
         }
 
         DemoSection(
-            title = "Controlled and event",
-            description = "Bind the checked state and react to changes through the callback.",
+            title = "Controlled",
+            description = "The checked state is fully controlled by the caller and can be changed programmatically.",
+            code = """
+var checked by remember { mutableStateOf(false) }
+
+NCheckbox(checked, { checked = it }, label = "Controlled")
+NButton(onClick = { checked = !checked }) { NText("Toggle") }
+""",
+        ) {
+            var checked by remember { mutableStateOf(false) }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NCheckbox(checked, { checked = it }, label = "Controlled checkbox")
+                NButton(onClick = { checked = !checked }, size = NSize.Small) { NText("Toggle from code") }
+                NText("checked = $checked")
+            }
+        }
+
+        DemoSection(
+            title = "Customize checked value",
+            description = "Provide checkedValue and uncheckedValue to emit custom values through onValueChange.",
+            code = """
+NCheckbox(
+    checked = checked,
+    onCheckedChange = { checked = it },
+    checkedValue = "Foo",
+    uncheckedValue = "Bar",
+    onValueChange = { emitted = it },
+    label = "FooBar",
+)
+""",
+        ) {
+            var checked by remember { mutableStateOf(false) }
+            var emitted by remember { mutableStateOf<Any?>(null) }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NCheckbox(
+                    checked = checked,
+                    onCheckedChange = { checked = it },
+                    checkedValue = "Foo",
+                    uncheckedValue = "Bar",
+                    onValueChange = { emitted = it },
+                    label = "FooBar",
+                )
+                NText("onValueChange: ${emitted ?: "—"}")
+            }
+        }
+
+        DemoSection(
+            title = "Event",
+            description = "onCheckedChange fires whenever the user toggles the checkbox.",
+            code = """
+NCheckbox(
+    checked = checked,
+    onCheckedChange = { events = (events + "onCheckedChange: ${'$'}it").takeLast(3) },
+    label = "Log events",
+)
+""",
         ) {
             var accepted by remember { mutableStateOf(false) }
             var events by remember { mutableStateOf(listOf<String>()) }
@@ -186,9 +245,41 @@ NCheckbox(
                         accepted = it
                         events = (events + "onCheckedChange: $it").takeLast(3)
                     },
-                    label = "I accept the terms",
+                    label = "Log events",
                 )
                 NText(if (events.isEmpty()) "No events yet" else events.joinToString("  •  "))
+            }
+        }
+
+        DemoSection(
+            title = "Focus",
+            description = "A FocusRequester can move keyboard focus to the checkbox; the focus ring is shown while it is focused.",
+            code = """
+val focusRequester = remember { FocusRequester() }
+
+NCheckbox(
+    checked, { checked = it },
+    label = "Focusable checkbox",
+    focusRequester = focusRequester,
+)
+NButton(onClick = { focusRequester.requestFocus() }) { NText("Focus checkbox") }
+""",
+        ) {
+            var checked by remember { mutableStateOf(false) }
+            val focusRequester = remember { FocusRequester() }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NCheckbox(
+                    checked = checked,
+                    onCheckedChange = { checked = it },
+                    label = "Focusable checkbox",
+                    focusRequester = focusRequester,
+                )
+                NButton(onClick = { focusRequester.requestFocus() }, size = NSize.Small) {
+                    NText("Focus checkbox")
+                }
             }
         }
     }

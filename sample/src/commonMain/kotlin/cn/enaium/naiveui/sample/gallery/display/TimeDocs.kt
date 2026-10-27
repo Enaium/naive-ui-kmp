@@ -22,16 +22,31 @@ fun TimeDocs() {
     ) {
         DemoSection(
             title = "Basic",
-            description = "time accepts epoch milliseconds. The default type is DateTime and the default format is yyyy-MM-dd HH:mm:ss.",
+            description = "time accepts epoch milliseconds or an ISO-8601 string. The default type renders a full date-time.",
             code = """
-NTime(time = 1714566896000)
+NTime(time = 0)
 NTime(isoTime = "2024-05-01T12:34:56")
 """,
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 NTime(time = 1714566896000L)
                 NTime(isoTime = "2024-05-01T12:34:56")
-                NTime(type = NTimeType.Date, time = 1714566896000L)
+            }
+        }
+
+        DemoSection(
+            title = "Type",
+            description = "type selects date, datetime or relative rendering for the same instant.",
+            code = """
+NTime(time = 0, type = NTimeType.Date)
+NTime(time = 0, type = NTimeType.DateTime)
+NTime(time = 0, to = 86_400_000, type = NTimeType.Relative)
+""",
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                NTime(time = 0, type = NTimeType.Date)
+                NTime(time = 0, type = NTimeType.DateTime)
+                NTime(time = 0, to = 86_400_000L, type = NTimeType.Relative)
             }
         }
 

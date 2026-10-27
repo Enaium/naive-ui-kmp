@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,22 +13,38 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import cn.enaium.naiveui.components.NButton
+import cn.enaium.naiveui.components.NButtonType
+import cn.enaium.naiveui.components.NCheckbox
 import cn.enaium.naiveui.components.NDynamicInput
+import cn.enaium.naiveui.components.NDynamicInputPair
+import cn.enaium.naiveui.components.NDynamicInputPreset
+import cn.enaium.naiveui.components.NForm
+import cn.enaium.naiveui.components.NFormItem
+import cn.enaium.naiveui.components.NFormRule
 import cn.enaium.naiveui.components.NInput
 import cn.enaium.naiveui.components.NText
+import cn.enaium.naiveui.components.rememberNFormState
+import cn.enaium.naiveui.icons.NIcon
+import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.sample.gallery.DemoSection
 import cn.enaium.naiveui.sample.gallery.DocsPage
 import cn.enaium.naiveui.theme.LocalNTheme
+import cn.enaium.naiveui.theme.NSize
+
+private data class CustomInputValue(val checked: Boolean, val text: String)
+
+private data class FormRowValue(val name: String, val value: String)
 
 @Composable
 fun DynamicInputDocs() {
     DocsPage(
         title = "Dynamic Input",
-        description = "Edit a dynamic list of input values with add, remove and sort actions.",
+        description = "Edit a dynamic list of values with add, remove and sort actions.",
     ) {
         DemoSection(
             title = "Basic",
-            description = "Bind the value list and set the minimum and maximum item counts. The default item is an input.",
+            description = "The default item is an input. Set min and max to bound the list.",
             code = """
 var values by remember { mutableStateOf(listOf("", "", "")) }
 NDynamicInput(
@@ -42,44 +59,53 @@ NDynamicInput(
             BasicDemo()
         }
         DemoSection(
-            title = "Min and max",
-            description = "Removal stops at min and insertion stops at max; both buttons are disabled accordingly.",
+            title = "Using pair preset",
+            description = "The pair preset edits a key and a value per row.",
+            code = """
+NDynamicInput(
+    values = pairs,
+    onValueChange = { pairs = it },
+    preset = NDynamicInputPreset.Pair,
+    keyPlaceholder = "Please input the key",
+    valuePlaceholder = "Please input the value",
+)
+""".trimIndent(),
+        ) {
+            PairDemo()
+        }
+        DemoSection(
+            title = "Customizing input content",
+            description = "Pass item and onCreate to render arbitrary content for each value.",
             code = """
 NDynamicInput(
     values = values,
     onValueChange = { values = it },
-    min = 1,
-    max = 3,
+    onCreate = { CustomValue(false, "A String") },
+    createButtonContent = { NText("Add whatever you want") },
+    item = { value, index, onValueChange -> ... },
 )
 """.trimIndent(),
         ) {
-            MinMaxDemo()
+            CustomDemo()
         }
         DemoSection(
-            title = "Custom item",
-            description = "Pass the item slot to render any content for each value.",
+            title = "Using it in a form",
+            description = "Put form items inside the item slot and validate each indexed path.",
             code = """
-NDynamicInput(
-    values = values,
-    onValueChange = { values = it },
-    item = { value, index, onValueChange ->
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            NText("${'$'}{index + 1}.")
-            NInput(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.weight(1f),
-            )
-        }
-    },
-)
+NDynamicInput(values = rows, onValueChange = { rows = it }, item = { row, index, onChange ->
+    NFormItem(
+        path = "rows[${'$'}index].name",
+        rule = NFormRule(required = true, message = "Please input a name"),
+        showLabel = false,
+    ) { NInput(value = row.name, onValueChange = { onChange(row.copy(name = it)) }) }
+})
 """.trimIndent(),
         ) {
-            CustomItemDemo()
+            FormDemo()
         }
         DemoSection(
-            title = "Sort button",
-            description = "Show move-up and move-down actions to reorder values.",
+            title = "Show sort button",
+            description = "showSortButton adds move-up and move-down actions.",
             code = """
 NDynamicInput(
     values = values,
@@ -88,9 +114,34 @@ NDynamicInput(
 )
 """.trimIndent(),
         ) {
-            SortDemo()
+            MoveDemo()
+        }
+        DemoSection(
+            title = "Customizing action",
+            description = "Pass the action slot to replace the default add/remove/sort buttons.",
+            code = """
+NDynamicInput(
+    values = values,
+    onValueChange = { values = it },
+    min = 3,
+    max = 6,
+    action = { value, index, create, remove, move -> ... },
+)
+""".trimIndent(),
+        ) {
+            CustomActionDemo()
         }
     }
+}
+
+@Composable
+private fun ResultText(result: Boolean?) {
+    if (result == null) return
+    val theme = LocalNTheme.current
+    NText(
+        text = if (result) "Valid" else "Invalid",
+        color = if (result) theme.colors.success else theme.colors.error,
+    )
 }
 
 @Composable
@@ -109,41 +160,45 @@ private fun BasicDemo() {
 }
 
 @Composable
-private fun MinMaxDemo() {
-    var values by remember { mutableStateOf(listOf("", "")) }
+private fun PairDemo() {
+    var pairs by remember { mutableStateOf(listOf(NDynamicInputPair("", ""))) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         NDynamicInput(
-            values = values,
-            onValueChange = { values = it },
-            min = 1,
-            max = 3,
-            placeholder = "At most 3 items",
+            values = pairs,
+            onValueChange = { pairs = it },
+            preset = NDynamicInputPreset.Pair,
+            keyPlaceholder = "Please input the key",
+            valuePlaceholder = "Please input the value",
         )
-        NText("${values.size} item(s), min 1, max 3", color = LocalNTheme.current.colors.text3)
+        NText("Pairs: $pairs", color = LocalNTheme.current.colors.text3)
     }
 }
 
 @Composable
-private fun CustomItemDemo() {
-    var values by remember { mutableStateOf(listOf("A String")) }
+private fun CustomDemo() {
+    var values by remember {
+        mutableStateOf(listOf(CustomInputValue(checked = true, text = "A String")))
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         NDynamicInput(
             values = values,
             onValueChange = { values = it },
-            item = { value, index, onValueChange ->
+            onCreate = { CustomInputValue(checked = false, text = "A String") },
+            createButtonContent = { NText("Add whatever you want") },
+            item = { value, _, onValueChange ->
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    NText(
-                        text = "${index + 1}.",
-                        color = LocalNTheme.current.colors.text3,
+                    NCheckbox(
+                        checked = value.checked,
+                        onCheckedChange = { onValueChange(value.copy(checked = it)) },
                     )
                     NInput(
-                        value = value,
-                        onValueChange = onValueChange,
-                        placeholder = "Custom content",
+                        value = value.text,
+                        onValueChange = { onValueChange(value.copy(text = it)) },
+                        placeholder = "A String",
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -154,14 +209,126 @@ private fun CustomItemDemo() {
 }
 
 @Composable
-private fun SortDemo() {
-    var values by remember { mutableStateOf(listOf("First", "Second", "Third")) }
+private fun FormDemo() {
+    val form = rememberNFormState()
+    var rows by remember { mutableStateOf(listOf(FormRowValue("", ""))) }
+    var result by remember { mutableStateOf<Boolean?>(null) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        NForm(
+            model = mapOf(
+                "rows" to rows.map { mapOf("name" to it.name, "value" to it.value) },
+            ),
+            state = form,
+            validateCallback = { result = it },
+            modifier = Modifier.width(620.dp),
+        ) {
+            NDynamicInput(
+                values = rows,
+                onValueChange = { rows = it },
+                onCreate = { FormRowValue("", "") },
+                item = { row, index, onChange ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        NFormItem(
+                            path = "rows[$index].name",
+                            rule = NFormRule(required = true, message = "Please input a name"),
+                            showLabel = false,
+                            first = true,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            NInput(
+                                value = row.name,
+                                onValueChange = { onChange(row.copy(name = it)) },
+                                placeholder = "Name",
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        NText("=")
+                        NFormItem(
+                            path = "rows[$index].value",
+                            rule = NFormRule(required = true, message = "Please input a value"),
+                            showLabel = false,
+                            first = true,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            NInput(
+                                value = row.value,
+                                onValueChange = { onChange(row.copy(value = it)) },
+                                placeholder = "Value",
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                },
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            NButton(type = NButtonType.Primary, onClick = { form.validate() }) { NText("Validate") }
+            ResultText(result)
+        }
+    }
+}
+
+@Composable
+private fun MoveDemo() {
+    var values by remember { mutableStateOf(listOf("", "", "")) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         NDynamicInput(
             values = values,
             onValueChange = { values = it },
+            placeholder = "Come on",
             showSortButton = true,
         )
-        NText("Order: ${values.joinToString(" -> ")}", color = LocalNTheme.current.colors.text3)
+        NText("Values: $values", color = LocalNTheme.current.colors.text3)
+    }
+}
+
+@Composable
+private fun CustomActionDemo() {
+    var values by remember { mutableStateOf(listOf("Vue", "Vue3", "React")) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        NDynamicInput(
+            values = values,
+            onValueChange = { values = it },
+            placeholder = "Come on",
+            min = 3,
+            max = 6,
+            action = { _, index, create, remove, move ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NButton(
+                        onClick = { create(index) },
+                        size = NSize.Small,
+                        circle = true,
+                        icon = { NIcon(NIcons.Add, size = 15.dp) },
+                    )
+                    NButton(
+                        onClick = { remove(index) },
+                        size = NSize.Small,
+                        circle = true,
+                        disabled = values.size <= 3,
+                        icon = { NIcon(NIcons.Remove, size = 15.dp) },
+                    )
+                    NButton(
+                        onClick = { move(index, -1) },
+                        size = NSize.Small,
+                        circle = true,
+                        disabled = index == 0,
+                        icon = { NIcon(NIcons.ArrowUp, size = 14.dp) },
+                    )
+                    NButton(
+                        onClick = { move(index, 1) },
+                        size = NSize.Small,
+                        circle = true,
+                        disabled = index == values.lastIndex,
+                        icon = { NIcon(NIcons.ArrowDown, size = 14.dp) },
+                    )
+                }
+            },
+        )
+        NText("Values: $values", color = LocalNTheme.current.colors.text3)
     }
 }

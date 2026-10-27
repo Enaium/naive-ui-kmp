@@ -1,47 +1,33 @@
 package cn.enaium.naiveui.sample.gallery.layout
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import cn.enaium.naiveui.components.NButton
-import cn.enaium.naiveui.components.NText
-import cn.enaium.naiveui.components.NTag
 import cn.enaium.naiveui.components.NAlign
+import cn.enaium.naiveui.components.NButton
 import cn.enaium.naiveui.components.NFlex
 import cn.enaium.naiveui.components.NJustify
+import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.sample.gallery.DemoSection
 import cn.enaium.naiveui.sample.gallery.DocsPage
-import cn.enaium.naiveui.theme.LocalNTheme
-import cn.enaium.naiveui.theme.NSize
-import cn.enaium.naiveui.theme.NStatus
 
 @Composable
 fun FlexDocs() {
-    val theme = LocalNTheme.current
     DocsPage(
         title = "Flex",
-        description = "Flex is the low-level layout primitive behind Space. It maps directly onto a row, " +
-            "a column or a wrapping flow and supports the usual justify and align options.",
+        description = "Flex is a lower-level layout container built on the flexbox model. Prefer it over Space when you need gaps and alignment.",
     ) {
         DemoSection(
             title = "Basic",
-            description = "Content flows horizontally and wraps only when wrap is enabled.",
-            code = """
-                NFlex {
-                    NButton { NText("Oops!") }
-                    NButton { NText("Oops!") }
-                    NButton { NText("Oops!") }
-                }
-            """.trimIndent(),
+            description = "A flex container lays its children out in a row.",
         ) {
-            NFlex {
+            NFlex(size = 8.dp) {
                 NButton { NText("Oops!") }
                 NButton { NText("Oops!") }
                 NButton { NText("Oops!") }
@@ -50,70 +36,107 @@ fun FlexDocs() {
         }
 
         DemoSection(
-            title = "Justify",
-            description = "SpaceBetween pushes the first and last items to the edges.",
+            title = "Vertical",
+            description = "Set `vertical = true` to lay children out in a column.",
         ) {
-            NFlex(Modifier.fillMaxWidth(), justify = NJustify.SpaceBetween) {
-                NButton { NText("Start") }
-                NButton { NText("Middle") }
-                NButton { NText("End") }
+            NFlex(vertical = true, size = 8.dp) {
+                NButton { NText("Oops!") }
+                NButton { NText("Oops!") }
+                NButton { NText("Oops!") }
+            }
+        }
+
+        DemoSection(
+            title = "Center",
+            description = "Center children on the main axis with `justify = NJustify.Center`.",
+        ) {
+            NFlex(justify = NJustify.Center, modifier = Modifier.fillMaxWidth()) {
+                repeat(3) { NButton { NText("Oops!") } }
+            }
+        }
+
+        DemoSection(
+            title = "From end",
+            description = "Push children to the end of the row with `justify = NJustify.End`.",
+        ) {
+            NFlex(justify = NJustify.End, modifier = Modifier.fillMaxWidth()) {
+                repeat(3) { NButton { NText("Oops!") } }
+            }
+        }
+
+        DemoSection(
+            title = "Space between",
+            description = "`NJustify.SpaceBetween` puts the first and last child at the edges.",
+        ) {
+            NFlex(justify = NJustify.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                repeat(3) { NButton { NText("Oops!") } }
+            }
+        }
+
+        DemoSection(
+            title = "Space around",
+            description = "`NJustify.SpaceAround` adds equal space around every child.",
+        ) {
+            NFlex(justify = NJustify.SpaceAround, modifier = Modifier.fillMaxWidth()) {
+                repeat(3) { NButton { NText("Oops!") } }
             }
         }
 
         DemoSection(
             title = "Align",
-            description = "Center aligns items of different heights on the cross axis.",
+            description = "`align` positions children on the cross axis.",
         ) {
-            NFlex(
-                Modifier
-                    .fillMaxWidth()
-                    .height(96.dp)
-                    .clip(RoundedCornerShape(theme.borderRadius))
-                    .background(theme.colors.action)
-                    .padding(12.dp),
-                align = NAlign.Center,
-                size = 8.dp,
-            ) {
-                NButton(size = NSize.Small) { NText("Small") }
-                NButton(size = NSize.Medium) { NText("Medium") }
-                NButton(size = NSize.Large) { NText("Large") }
-            }
-        }
-
-        DemoSection(
-            title = "Wrap",
-            description = "Wrapped flows move overflowing items onto the next line.",
-        ) {
-            NFlex(Modifier.fillMaxWidth(), wrap = true, size = 8.dp) {
-                repeat(10) { index ->
-                    NTag(
-                        text = "Tag ${index + 1}",
-                        type = if (index % 2 == 0) NStatus.Primary else NStatus.Default,
-                    )
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                NFlex(align = NAlign.Start, size = 8.dp, modifier = Modifier.height(60.dp)) {
+                    NButton { NText("Start") }
+                    NButton { NText("Start") }
+                }
+                NFlex(align = NAlign.Center, size = 8.dp, modifier = Modifier.height(60.dp)) {
+                    NButton { NText("Center") }
+                    NButton { NText("Center") }
+                }
+                NFlex(align = NAlign.End, size = 8.dp, modifier = Modifier.height(60.dp)) {
+                    NButton { NText("End") }
+                    NButton { NText("End") }
                 }
             }
         }
 
         DemoSection(
-            title = "Size",
-            description = "size is the gap between items on both axes.",
+            title = "Wrap",
+            description = "With `wrap = true` children flow onto new lines, spaced by `size`.",
         ) {
-            NFlex(Modifier.fillMaxWidth(), size = 20.dp) {
-                NButton { NText("First") }
-                NButton { NText("Second") }
-                NButton { NText("Third") }
+            NFlex(size = 8.dp, wrap = true, modifier = Modifier.fillMaxWidth()) {
+                repeat(12) { index ->
+                    NButton { NText("Item ${index + 1}") }
+                }
             }
         }
 
         DemoSection(
-            title = "Vertical",
-            description = "Set vertical to stack items; size controls the gap.",
+            title = "Gap",
+            description = "`size` is the gap between children on both axes when wrapping.",
         ) {
-            Column(Modifier.fillMaxWidth()) {
-                NFlex(vertical = true, size = 10.dp) {
-                    NButton { NText("First") }
-                    NButton { NText("Second") }
-                    NButton { NText("Third") }
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                NFlex(size = 4.dp) {
+                    repeat(4) { NButton { NText("4dp") } }
+                }
+                NFlex(size = 20.dp) {
+                    repeat(4) { NButton { NText("20dp") } }
+                }
+            }
+        }
+
+        DemoSection(
+            title = "Inline",
+            description = "Flex containers can be nested inline with text.",
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NText("Inline: ")
+                NFlex(size = 6.dp) {
+                    NButton { NText("Alpha") }
+                    NButton { NText("Beta") }
+                    NButton { NText("Gamma") }
                 }
             }
         }

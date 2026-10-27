@@ -2,6 +2,7 @@ package cn.enaium.naiveui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -11,6 +12,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
@@ -44,6 +46,7 @@ fun NWatermark(
     fontWeight: FontWeight = FontWeight.Normal,
     rotate: Float = 0f,
     globalRotate: Float = 0f,
+    fullscreen: Boolean = false,
     width: Dp = 192.dp,
     height: Dp = 128.dp,
     horizontalGap: Dp = 0.dp,
@@ -89,10 +92,10 @@ fun NWatermark(
     val offsetX = with(density) { offset.x.toPx() }
     val offsetY = with(density) { offset.y.toPx() }
 
-    Box(modifier) {
+    Box(modifier.then(if (fullscreen) Modifier.fillMaxSize() else Modifier)) {
         content()
         Canvas(Modifier.matchParentSize()) {
-            if (layouts.isEmpty() || cellWidth <= 0f || cellHeight <= 0f) return@Canvas
+            if ((layouts.isEmpty() && imagePainter == null) || cellWidth <= 0f || cellHeight <= 0f) return@Canvas
             val columns = (size.width / cellWidth).toInt() + 3
             val rows = (size.height / cellHeight).toInt() + 3
             val lineHeight = layouts.firstOrNull()?.size?.height?.toFloat() ?: 0f
@@ -113,11 +116,13 @@ fun NWatermark(
                         val y = row * cellHeight - cellHeight
                         rotate(degrees = rotate, pivot = Offset(x + cellWidth / 2f, y + cellHeight / 2f)) {
                             if (painterReady && painter != null) {
-                                with(painter) {
-                                    draw(
-                                        size = Size(imgWidth, imgHeight),
-                                        alpha = imageOpacity,
-                                    )
+                                translate(left = x + offsetX, top = y + offsetY) {
+                                    with(painter) {
+                                        draw(
+                                            size = Size(imgWidth, imgHeight),
+                                            alpha = imageOpacity,
+                                        )
+                                    }
                                 }
                             }
                             layouts.forEachIndexed { index, layout ->

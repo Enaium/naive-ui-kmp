@@ -19,7 +19,19 @@ import kotlin.math.roundToInt
 @Immutable
 data class NGridBreakpoint(val width: Dp, val cols: Int)
 
-private data class NGridItemData(val span: Int, val offset: Int) : ParentDataModifier {
+/** Responsive span/offset applied by [NGridItem] at its matching width. */
+@Immutable
+data class NGridItemBreakpoint(
+    val width: Dp,
+    val span: Int,
+    val offset: Int = 0,
+)
+
+private data class NGridItemData(
+    val span: Int,
+    val offset: Int,
+    val responsive: List<NGridItemBreakpoint>,
+) : ParentDataModifier {
     override fun Density.modifyParentData(parentData: Any?): Any = this@NGridItemData
 }
 
@@ -28,7 +40,9 @@ private data class NGridItemData(val span: Int, val offset: Int) : ParentDataMod
  * and offset; gaps are applied between columns and rows.
  *
  * [responsiveCols] picks the column count from the widest matching breakpoint.
- * With [collapsed] only the first [collapsedRows] rows are shown.
+ * With [collapsed] only the first [collapsedRows] rows are shown. Set
+ * [layoutShiftDisabled] to ignore all responsive behavior and use fixed
+ * [cols].
  */
 @Composable
 fun NGrid(
@@ -39,14 +53,19 @@ fun NGrid(
     collapsed: Boolean = false,
     collapsedRows: Int = 1,
     responsiveCols: List<NGridBreakpoint> = emptyList(),
+    layoutShiftDisabled: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val resolvedCols = responsiveCols
-            .filter { maxWidth >= it.width }
-            .maxByOrNull { it.width }
-            ?.cols
-            ?: cols
+        val resolvedCols = if (layoutShiftDisabled) {
+            cols
+        } else {
+            responsiveCols
+                .filter { maxWidth >= it.width }
+                .maxByOrNull { it.width }
+                ?.cols
+                ?: cols
+        }
         val columns = resolvedCols.coerceAtLeast(1)
         Layout(content = content) { measurables, constraints ->
             val gapX = xGap.roundToPx()
@@ -56,14 +75,32 @@ fun NGrid(
                 )
             fun spanWidth(span: Int): Int =
                 (cell * span + gapX * (span - 1)).roundToInt().coerceAtLeast(0)
+            val containerWidth = constraints.maxWidth.toDp()
 
             var row = 0
             var column = 0
             val slots = ArrayList<IntArray>(measurables.size) // index, span, column, row, visible
             measurables.forEachIndexed { index, measurable ->
                 val data = measurable.parentData as? NGridItemData
-                val span = (data?.span ?: 1).coerceIn(1, columns)
-                val offset = (data?.offset ?: 0).coerceIn(0, columns - 1)
+                var span = data?.span ?: 1
+                var offset = data?.offset ?: 0
+                if (!layoutShiftDisabled) {
+                    val breakpoint = data?.responsive
+                        ?.filter { containerWidth >= it.width }
+                        ?.maxByOrNull { it.width }
+                    if (breakpoint != null) {
+                        span = breakpoint.span
+                        offset = breakpoint.offset
+                    }
+                } else {
+                    offset = 0
+                }
+                span = span.coerceIn(0, columns)
+                offset = offset.coerceIn(0, columns - 1)
+                if (span == 0) {
+                    slots += intArrayOf(index, 0, 0, row, 0)
+                    return@forEachIndexed
+                }
                 var start = column + offset
                 if (start + span > columns) {
                     row += 1
@@ -138,14 +175,16 @@ fun NGrid(
 
 /**
  * Grid cell. [span] is the number of columns it occupies, [offset] shifts it
- * to the right before placement.
+ * to the right before placement. [responsive] overrides both at matching grid
+ * widths; a span of 0 hides the item.
  */
 @Composable
 fun NGridItem(
     modifier: Modifier = Modifier,
     span: Int = 1,
     offset: Int = 0,
+    responsive: List<NGridItemBreakpoint> = emptyList(),
     content: @Composable () -> Unit,
 ) {
-    Box(modifier.then(NGridItemData(span, offset))) { content() }
+    Box(modifier.then(NGridItemData(span, offset, responsive))) { content() }
 }

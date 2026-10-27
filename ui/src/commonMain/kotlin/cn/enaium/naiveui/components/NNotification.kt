@@ -1,21 +1,31 @@
 package cn.enaium.naiveui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -26,13 +36,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
-import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.internal.NCloseButton
+import cn.enaium.naiveui.internal.NScrollbar
 import cn.enaium.naiveui.internal.nBorder
 import cn.enaium.naiveui.internal.nShadow
 import cn.enaium.naiveui.theme.LocalNTheme
+import cn.enaium.naiveui.theme.NSize
 import cn.enaium.naiveui.theme.NStatus
 import kotlinx.coroutines.delay
 
@@ -40,7 +51,7 @@ import kotlinx.coroutines.delay
 enum class NNotificationType { Default, Info, Success, Warning, Error }
 
 /** Where the notification host is anchored inside the window. */
-enum class NNotificationPlacement { TopRight, TopLeft, BottomRight, BottomLeft }
+enum class NNotificationPlacement { Top, TopLeft, TopRight, Bottom, BottomLeft, BottomRight }
 
 /** Options accepted by [NNotificationApi.create]. */
 data class NNotificationOptions(
@@ -50,10 +61,43 @@ data class NNotificationOptions(
     val type: NNotificationType = NNotificationType.Default,
     val duration: Long = 4500,
     val closable: Boolean = true,
+    val avatarText: String? = null,
+    val actionText: String? = null,
+    val keepAliveOnHover: Boolean = false,
+    val onAction: (() -> Unit)? = null,
+    val onAfterLeave: (() -> Unit)? = null,
 )
 
-/** Returned by [NNotificationApi]; call [close] to dismiss the notification. */
-class NNotificationHandle internal constructor(private val closeAction: () -> Unit) {
+/**
+ * Returned by [NNotificationApi].
+ *
+ * [title], [content] and [type] are reactive and can be changed while the
+ * notification is visible; [close] dismisses it immediately.
+ */
+class NNotificationHandle internal constructor(
+    private val titleState: MutableState<String?>,
+    private val contentState: MutableState<String?>,
+    private val typeState: MutableState<NNotificationType>,
+    private val closeAction: () -> Unit,
+) {
+    var title: String?
+        get() = titleState.value
+        set(value) {
+            titleState.value = value
+        }
+
+    var content: String?
+        get() = contentState.value
+        set(value) {
+            contentState.value = value
+        }
+
+    var type: NNotificationType
+        get() = typeState.value
+        set(value) {
+            typeState.value = value
+        }
+
     fun close() = closeAction()
 }
 
@@ -72,7 +116,14 @@ class NNotificationApi internal constructor(
         content: String? = null,
         type: NNotificationType = NNotificationType.Default,
         duration: Long = 4500,
-    ): NNotificationHandle = show(NNotificationOptions(title, content, type = type, duration = duration))
+    ): NNotificationHandle = show(
+        NNotificationOptions(
+            title = title,
+            content = content,
+            type = type,
+            duration = duration,
+        ),
+    )
 
     fun info(title: String? = null, content: String? = null, duration: Long = 4500): NNotificationHandle =
         create(title, content, NNotificationType.Info, duration)
@@ -97,7 +148,13 @@ fun rememberNNotification(): NNotificationApi =
     LocalNNotification.current
         ?: error("NNotificationProvider is required to use NNotificationApi")
 
-private data class NNotificationEntry(val id: Long, val options: NNotificationOptions)
+private class NNotificationEntry(
+    val id: Long,
+    val options: NNotificationOptions,
+    val titleState: MutableState<String?>,
+    val contentState: MutableState<String?>,
+    val typeState: MutableState<NNotificationType>,
+)
 
 /**
  * Hosts the imperative notification API. Notifications stack in the chosen
@@ -107,6 +164,7 @@ private data class NNotificationEntry(val id: Long, val options: NNotificationOp
 fun NNotificationProvider(
     placement: NNotificationPlacement = NNotificationPlacement.TopRight,
     max: Int = 5,
+    scrollable: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val entries = remember { mutableStateListOf<NNotificationEntry>() }
@@ -116,15 +174,20 @@ fun NNotificationProvider(
             show = { options ->
                 val id = nextId++
                 if (max > 0 && entries.size >= max) entries.removeAt(0)
-                entries.add(NNotificationEntry(id, options))
-                NNotificationHandle { entries.removeAll { it.id == id } }
+                val titleState = mutableStateOf(options.title)
+                val contentState = mutableStateOf(options.content)
+                val typeState = mutableStateOf(options.type)
+                entries.add(NNotificationEntry(id, options, titleState, contentState, typeState))
+                NNotificationHandle(titleState, contentState, typeState) {
+                    entries.removeAll { it.id == id }
+                }
             },
             clear = { entries.clear() },
         )
     }
-    androidx.compose.runtime.CompositionLocalProvider(LocalNNotification provides api) {
+    CompositionLocalProvider(LocalNNotification provides api) {
         content()
-        NNotificationHost(entries, placement) { id -> entries.removeAll { it.id == id } }
+        NNotificationHost(entries, placement, scrollable) { id -> entries.removeAll { it.id == id } }
     }
 }
 
@@ -132,25 +195,19 @@ fun NNotificationProvider(
 private fun NNotificationHost(
     entries: List<NNotificationEntry>,
     placement: NNotificationPlacement,
+    scrollable: Boolean,
     onClose: (Long) -> Unit,
 ) {
     if (entries.isEmpty()) return
     val margin = with(LocalDensity.current) { 20.dp.roundToPx() }
-    val horizontal = if (
-        placement == NNotificationPlacement.TopRight ||
-        placement == NNotificationPlacement.BottomRight
-    ) {
-        1f
-    } else {
-        0f
+    val horizontal = when (placement) {
+        NNotificationPlacement.Top, NNotificationPlacement.Bottom -> 0.5f
+        NNotificationPlacement.TopLeft, NNotificationPlacement.BottomLeft -> 0f
+        NNotificationPlacement.TopRight, NNotificationPlacement.BottomRight -> 1f
     }
-    val vertical = if (
-        placement == NNotificationPlacement.TopRight ||
-        placement == NNotificationPlacement.TopLeft
-    ) {
-        0f
-    } else {
-        1f
+    val vertical = when (placement) {
+        NNotificationPlacement.Top, NNotificationPlacement.TopLeft, NNotificationPlacement.TopRight -> 0f
+        NNotificationPlacement.Bottom, NNotificationPlacement.BottomLeft, NNotificationPlacement.BottomRight -> 1f
     }
     Popup(
         popupPositionProvider = remember(horizontal, vertical, margin) {
@@ -168,11 +225,20 @@ private fun NNotificationHost(
             dismissOnClickOutside = false,
         ),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            entries.forEach { entry ->
-                key(entry.id) {
-                    NNotificationCard(entry) { onClose(entry.id) }
+        BoxWithConstraints {
+            val stack: @Composable () -> Unit = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    entries.forEach { entry ->
+                        key(entry.id) {
+                            NNotificationCard(entry) { onClose(entry.id) }
+                        }
+                    }
                 }
+            }
+            if (scrollable) {
+                NScrollbar(Modifier.heightIn(max = maxHeight * 0.8f)) { stack() }
+            } else {
+                stack()
             }
         }
     }
@@ -184,12 +250,20 @@ private fun NNotificationCard(
     onClose: () -> Unit,
 ) {
     val options = entry.options
-    LaunchedEffect(entry.id, options.duration) {
-        if (options.duration > 0) {
+    val title = entry.titleState.value
+    val content = entry.contentState.value
+    val type = entry.typeState.value
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+
+    LaunchedEffect(entry.id, options.duration, hovered) {
+        if (options.duration > 0 && !(options.keepAliveOnHover && hovered)) {
             delay(options.duration)
+            options.onAfterLeave?.invoke()
             onClose()
         }
     }
+
     val theme = LocalNTheme.current
     val shape = RoundedCornerShape(theme.borderRadius)
     Column(
@@ -199,6 +273,7 @@ private fun NNotificationCard(
             .clip(shape)
             .background(theme.colors.popover, shape)
             .nBorder(theme.colors.border, 1.dp, theme.borderRadius)
+            .hoverable(interaction)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -207,17 +282,34 @@ private fun NNotificationCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            val icon = options.type.icon()
-            if (icon != null) {
-                NIcon(
-                    icon = icon,
-                    size = 20.dp,
-                    color = theme.colors.statusColor(options.type.status()),
-                )
+            if (options.avatarText != null) {
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(theme.colors.primarySuppl),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    NText(
+                        text = options.avatarText.take(1).uppercase(),
+                        color = theme.colors.base,
+                        size = theme.typography.fontSize.medium,
+                        strong = true,
+                    )
+                }
+            } else {
+                val icon = type.icon()
+                if (icon != null) {
+                    NIcon(
+                        icon = icon,
+                        size = 20.dp,
+                        color = theme.colors.statusColor(type.status()),
+                    )
+                }
             }
-            if (options.title != null) {
+            if (title != null) {
                 NText(
-                    text = options.title,
+                    text = title,
                     modifier = Modifier.weight(1f),
                     size = theme.typography.fontSize.large,
                     strong = true,
@@ -230,9 +322,9 @@ private fun NNotificationCard(
                 NCloseButton(onClick = onClose, size = 18.dp, iconSize = 12.dp)
             }
         }
-        if (options.content != null) {
+        if (content != null) {
             NText(
-                text = options.content,
+                text = content,
                 color = theme.colors.text3,
                 size = theme.typography.fontSize.medium,
             )
@@ -243,6 +335,19 @@ private fun NNotificationCard(
                 color = theme.colors.text3,
                 size = theme.typography.fontSize.small,
             )
+        }
+        if (options.actionText != null) {
+            NButton(
+                size = NSize.Small,
+                text = true,
+                type = NButtonType.Primary,
+                onClick = {
+                    options.onAction?.invoke()
+                    onClose()
+                },
+            ) {
+                NText(options.actionText)
+            }
         }
     }
 }

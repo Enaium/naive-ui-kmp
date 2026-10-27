@@ -2,6 +2,8 @@ package cn.enaium.naiveui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -21,33 +24,44 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.internal.NBaseText
+import cn.enaium.naiveui.internal.nClickable
 import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NSize
+import cn.enaium.naiveui.theme.NTheme
 
 /** Status of a step or of the currently active step. */
 enum class NStepStatus { Wait, Process, Finish, Error }
+
+/** Placement of step text relative to the indicator. */
+enum class NStepContentPlacement { Right, Bottom }
 
 /**
  * A single step description for [NSteps].
  *
  * [status] overrides the status derived from [NSteps.current] when set.
+ * [icon] replaces the indicator for wait/process states, while [content]
+ * replaces the description with custom composable content.
  */
 class NStep(
     val title: String,
     val description: String? = null,
     val status: NStepStatus? = null,
     val disabled: Boolean = false,
+    val icon: (@Composable () -> Unit)? = null,
+    val content: (@Composable () -> Unit)? = null,
 )
 
 /**
  * Displays progress through a sequence of steps.
  *
  * [current] is 1-based; steps before it are finished and the step at it uses
- * [status]. Individual [NStep.status] values take precedence.
+ * [status]. Individual [NStep.status] values take precedence. When
+ * [onCurrentChange] is provided steps become clickable.
  */
 @Composable
 fun NSteps(
@@ -57,6 +71,10 @@ fun NSteps(
     status: NStepStatus = NStepStatus.Process,
     vertical: Boolean = false,
     size: NSize = NSize.Medium,
+    contentPlacement: NStepContentPlacement = NStepContentPlacement.Right,
+    onCurrentChange: ((Int) -> Unit)? = null,
+    finishIcon: (@Composable () -> Unit)? = null,
+    errorIcon: (@Composable () -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
     val indicatorSize: Dp = when (size) {
@@ -79,13 +97,30 @@ fun NSteps(
         Column(modifier) {
             steps.forEachIndexed { index, step ->
                 val stepStatus = resolveStepStatus(index, current, status, step.status)
-                Row(Modifier.height(IntrinsicSize.Min)) {
+                val interaction = remember(index, step.title) { MutableInteractionSource() }
+                val clickable = onCurrentChange != null && !step.disabled
+                Row(
+                    Modifier
+                        .height(IntrinsicSize.Min)
+                        .then(
+                            if (clickable) {
+                                Modifier
+                                    .hoverable(interaction)
+                                    .nClickable(interaction) { onCurrentChange?.invoke(index + 1) }
+                            } else {
+                                Modifier
+                            },
+                        ),
+                ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         StepIndicator(
                             index = index + 1,
                             status = stepStatus,
                             size = indicatorSize,
                             disabled = step.disabled,
+                            icon = step.icon,
+                            finishIcon = finishIcon,
+                            errorIcon = errorIcon,
                         )
                         if (index != steps.lastIndex) {
                             Box(
@@ -104,7 +139,7 @@ fun NSteps(
                             .alpha(if (step.disabled) theme.opacityDisabled else 1f)
                             .padding(bottom = if (index == steps.lastIndex) 0.dp else 20.dp),
                     ) {
-                        StepText(step, stepStatus, titleSize, descriptionSize)
+                        StepText(step, stepStatus, titleSize, descriptionSize, horizontal = false)
                     }
                 }
             }
@@ -114,30 +149,75 @@ fun NSteps(
 
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         steps.forEachIndexed { index, step ->
-            Column(Modifier.weight(1f).alpha(if (step.disabled) theme.opacityDisabled else 1f)) {
-                val stepStatus = resolveStepStatus(index, current, status, step.status)
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    StepIndicator(
-                        index = index + 1,
-                        status = stepStatus,
-                        size = indicatorSize,
-                        disabled = step.disabled,
-                    )
-                    if (index != steps.lastIndex) {
-                        Box(
+            val stepStatus = resolveStepStatus(index, current, status, step.status)
+            val interaction = remember(index, step.title) { MutableInteractionSource() }
+            val clickable = onCurrentChange != null && !step.disabled
+            Column(
+                Modifier
+                    .weight(1f)
+                    .alpha(if (step.disabled) theme.opacityDisabled else 1f)
+                    .then(
+                        if (clickable) {
                             Modifier
-                                .padding(start = 8.dp)
-                                .weight(1f)
-                                .height(2.dp)
-                                .background(connectorColor(stepStatus, theme)),
+                                .hoverable(interaction)
+                                .nClickable(interaction) { onCurrentChange?.invoke(index + 1) }
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                if (contentPlacement == NStepContentPlacement.Bottom) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        StepIndicator(
+                            index = index + 1,
+                            status = stepStatus,
+                            size = indicatorSize,
+                            disabled = step.disabled,
+                            icon = step.icon,
+                            finishIcon = finishIcon,
+                            errorIcon = errorIcon,
                         )
+                        if (index != steps.lastIndex) {
+                            Box(
+                                Modifier
+                                    .padding(start = 8.dp)
+                                    .weight(1f)
+                                    .height(2.dp)
+                                    .background(connectorColor(stepStatus, theme)),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    StepText(step, stepStatus, titleSize, descriptionSize, horizontal = false)
+                } else {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        StepIndicator(
+                            index = index + 1,
+                            status = stepStatus,
+                            size = indicatorSize,
+                            disabled = step.disabled,
+                            icon = step.icon,
+                            finishIcon = finishIcon,
+                            errorIcon = errorIcon,
+                        )
+                        Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                StepTitle(step, stepStatus, titleSize)
+                                if (index != steps.lastIndex) {
+                                    Spacer(Modifier.width(12.dp))
+                                    Box(
+                                        Modifier
+                                            .weight(1f)
+                                            .height(1.dp)
+                                            .background(connectorColor(stepStatus, theme)),
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            StepDescription(step, stepStatus, descriptionSize)
+                        }
                     }
                 }
-                Spacer(Modifier.height(10.dp))
-                StepText(step, stepStatus, titleSize, descriptionSize)
             }
         }
     }
@@ -147,37 +227,56 @@ fun NSteps(
 private fun StepText(
     step: NStep,
     status: NStepStatus,
-    titleSize: androidx.compose.ui.unit.TextUnit,
-    descriptionSize: androidx.compose.ui.unit.TextUnit,
+    titleSize: TextUnit,
+    descriptionSize: TextUnit,
+    horizontal: Boolean,
 ) {
+    StepTitle(step, status, titleSize)
+    Spacer(Modifier.height(if (horizontal) 2.dp else 4.dp))
+    StepDescription(step, status, descriptionSize)
+}
+
+@Composable
+private fun StepTitle(step: NStep, status: NStepStatus, titleSize: TextUnit) {
     val theme = LocalNTheme.current
-    val titleColor = when (status) {
-        NStepStatus.Process -> theme.colors.text1
-        NStepStatus.Error -> theme.colors.error
-        NStepStatus.Wait, NStepStatus.Finish -> theme.colors.textDisabled
-    }
-    val descriptionColor = when (status) {
-        NStepStatus.Process -> theme.colors.text2
-        NStepStatus.Error -> theme.colors.error
-        NStepStatus.Wait, NStepStatus.Finish -> theme.colors.textDisabled
-    }
     NBaseText(
         text = step.title,
         style = theme.typography.style(
             titleSize,
             if (status == NStepStatus.Process) FontWeight.Medium else theme.typography.fontWeight,
-            titleColor,
+            titleColor(status, theme),
         ),
         maxLines = 1,
     )
-    val description = step.description
-    if (!description.isNullOrEmpty()) {
-        Spacer(Modifier.height(4.dp))
-        NBaseText(
-            text = description,
-            style = theme.typography.style(descriptionSize, color = descriptionColor),
-        )
+}
+
+@Composable
+private fun StepDescription(step: NStep, status: NStepStatus, descriptionSize: TextUnit) {
+    val theme = LocalNTheme.current
+    val custom = step.content
+    if (custom != null) {
+        custom()
+    } else {
+        val description = step.description
+        if (!description.isNullOrEmpty()) {
+            NBaseText(
+                text = description,
+                style = theme.typography.style(descriptionSize, color = descriptionColor(status, theme)),
+            )
+        }
     }
+}
+
+private fun titleColor(status: NStepStatus, theme: NTheme): Color = when (status) {
+    NStepStatus.Process -> theme.colors.text1
+    NStepStatus.Error -> theme.colors.error
+    NStepStatus.Wait, NStepStatus.Finish -> theme.colors.textDisabled
+}
+
+private fun descriptionColor(status: NStepStatus, theme: NTheme): Color = when (status) {
+    NStepStatus.Process -> theme.colors.text2
+    NStepStatus.Error -> theme.colors.error
+    NStepStatus.Wait, NStepStatus.Finish -> theme.colors.textDisabled
 }
 
 @Composable
@@ -186,6 +285,9 @@ private fun StepIndicator(
     status: NStepStatus,
     size: Dp,
     disabled: Boolean,
+    icon: (@Composable () -> Unit)?,
+    finishIcon: (@Composable () -> Unit)?,
+    errorIcon: (@Composable () -> Unit)?,
 ) {
     val theme = LocalNTheme.current
     val background = when (status) {
@@ -214,9 +316,22 @@ private fun StepIndicator(
             .border(1.dp, borderColor, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        when (status) {
-            NStepStatus.Finish -> NIcon(NIcons.Checkmark, size = iconSize, color = contentColor)
-            NStepStatus.Error -> NIcon(NIcons.Close, size = iconSize, color = contentColor)
+        when {
+            status == NStepStatus.Finish -> {
+                if (finishIcon != null) {
+                    finishIcon()
+                } else {
+                    NIcon(NIcons.Checkmark, size = iconSize, color = contentColor)
+                }
+            }
+            status == NStepStatus.Error -> {
+                if (errorIcon != null) {
+                    errorIcon()
+                } else {
+                    NIcon(NIcons.Close, size = iconSize, color = contentColor)
+                }
+            }
+            icon != null -> icon()
             else -> NBaseText(
                 text = index.toString(),
                 style = theme.typography.style(
@@ -243,5 +358,5 @@ private fun resolveStepStatus(
     }
 }
 
-private fun connectorColor(status: NStepStatus, theme: cn.enaium.naiveui.theme.NTheme): Color =
+private fun connectorColor(status: NStepStatus, theme: NTheme): Color =
     if (status == NStepStatus.Finish) theme.colors.primary else theme.colors.textDisabled

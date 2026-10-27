@@ -45,7 +45,10 @@ fun NSplit(
     disabled: Boolean = false,
     resizeTriggerSize: Dp = 3.dp,
     onSizesChange: ((List<Float>) -> Unit)? = null,
+    onDragStart: (() -> Unit)? = null,
+    onDragMove: ((List<Float>) -> Unit)? = null,
     onDragEnd: ((List<Float>) -> Unit)? = null,
+    trigger: (@Composable () -> Unit)? = null,
     pane1: @Composable () -> Unit,
     pane2: @Composable () -> Unit,
 ) {
@@ -75,12 +78,13 @@ fun NSplit(
                 Box { pane2() }
                 Box(
                     Modifier
-                        .background(triggerColor)
+                        .then(if (trigger == null) Modifier.background(triggerColor) else Modifier)
                         .hoverable(interaction, enabled = !disabled)
                         .pointerHoverIcon(PointerIcon.Hand)
                         .pointerInput(direction, disabled, usablePx, min, max) {
                             if (disabled) return@pointerInput
                             detectDragGestures(
+                                onDragStart = { onDragStart?.invoke() },
                                 onDragEnd = { onDragEnd?.invoke(currentSizes()) },
                             ) { change, dragAmount ->
                                 change.consume()
@@ -88,9 +92,12 @@ fun NSplit(
                                 val next = (fraction + delta / usablePx).coerceIn(min, max)
                                 fraction = next
                                 onSizesChange?.invoke(currentSizes())
+                                onDragMove?.invoke(currentSizes())
                             }
                         },
-                )
+                ) {
+                    trigger?.invoke()
+                }
             },
         ) { measurables, constraints ->
             val trigger = resizeTriggerSize.roundToPx()

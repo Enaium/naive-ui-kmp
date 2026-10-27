@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.components.NEllipsis
 import cn.enaium.naiveui.components.NEllipsisExpandTrigger
+import cn.enaium.naiveui.components.NPerformantEllipsis
 import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.sample.gallery.DemoSection
 import cn.enaium.naiveui.sample.gallery.DocsPage
@@ -33,6 +34,40 @@ NEllipsis(LONG_TEXT, Modifier.width(240.dp))
 """.trimIndent(),
         ) {
             NEllipsis(LONG_TEXT, Modifier.width(240.dp))
+        }
+
+        DemoSection(
+            title = "Customize tooltip content",
+            description = "Use the `tooltipContent` slot to render rich tooltip content.",
+        ) {
+            NEllipsis(
+                LONG_TEXT,
+                Modifier.width(240.dp),
+                tooltipContent = {
+                    Column {
+                        NText("Lorem Ipsum", strong = true)
+                        NText(
+                            "Sed ut perspiciatis unde omnis iste natus error sit " +
+                                "voluptatem accusantium doloremque laudantium.",
+                        )
+                    }
+                },
+            )
+        }
+
+        DemoSection(
+            title = "Better render performance",
+            description = "`NPerformantEllipsis` shares the same layout pipeline and is " +
+                "suited to long lists of truncated text.",
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                repeat(3) { index ->
+                    NPerformantEllipsis(
+                        "$index. $LONG_TEXT",
+                        Modifier.width(240.dp),
+                    )
+                }
+            }
         }
 
         DemoSection(

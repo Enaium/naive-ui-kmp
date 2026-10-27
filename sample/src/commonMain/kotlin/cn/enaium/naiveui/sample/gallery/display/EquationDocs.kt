@@ -13,6 +13,8 @@ import cn.enaium.naiveui.sample.gallery.DocsPage
 
 private const val BasicEquation = """\displaystyle = \frac{k(k+1)}{2}+k+1"""
 
+private const val OptionsEquation = """\int_{\R} e^{-x^2} dx = \sqrt{\pi}"""
+
 private const val FractionEquation = """\frac{1}{1+x} + \sqrt{x^2+y^2} + \sqrt[3]{8}"""
 
 private const val ScriptEquation = """a^2 + b_1^2 = c^2"""
@@ -35,6 +37,25 @@ fun EquationDocs() {
             code = "NEquation(\"\\\\displaystyle = \\\\frac{k(k+1)}{2}+k+1\")",
         ) {
             NEquation(BasicEquation)
+        }
+        DemoSection(
+            title = "Display mode and macros",
+            description = "The equivalent of KaTeX options: displayMode centers the formula and macros define shortcuts.",
+            code = "NEquation(value, displayMode = true, macros = mapOf(\"R\" to \"\\\\mathbb{R}\"))",
+        ) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                NEquation(
+                    value = OptionsEquation,
+                    fontSize = 20.sp,
+                    displayMode = true,
+                    macros = mapOf("R" to "\\mathbb{R}"),
+                )
+                NEquation(
+                    value = GreekEquation,
+                    fontSize = 18.sp,
+                    displayMode = true,
+                )
+            }
         }
         DemoSection(
             title = "Fractions and roots",

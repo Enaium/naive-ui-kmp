@@ -1,6 +1,8 @@
 package cn.enaium.naiveui.components
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -17,6 +19,7 @@ fun <T> NVirtualList(
     modifier: Modifier = Modifier,
     itemHeight: Dp = 34.dp,
     itemResizable: Boolean = false,
+    state: LazyListState = rememberLazyListState(),
     contentPadding: PaddingValues = PaddingValues(0.dp),
     item: @Composable (T) -> Unit,
 ) {
@@ -25,6 +28,7 @@ fun <T> NVirtualList(
         modifier = modifier,
         itemHeight = itemHeight,
         itemResizable = itemResizable,
+        state = state,
         contentPadding = contentPadding,
         item = item,
     )

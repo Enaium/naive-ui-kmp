@@ -1,34 +1,44 @@
 package cn.enaium.naiveui.sample.gallery.feedback
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.enaium.naiveui.components.NDrawer
 import cn.enaium.naiveui.components.NDrawerPlacement
 import cn.enaium.naiveui.components.NButton
-import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.components.NSpace
+import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.sample.gallery.DemoSection
 import cn.enaium.naiveui.sample.gallery.DocsPage
+import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NSize
 
 @Composable
 fun DrawerDocs() {
     DocsPage(
         title = "Drawer",
-        description = "Drawer slides a panel in from any window edge. The panel animates on open and close, " +
-            "supports a title, close affordance, footer and scrollable body.",
+        description = "Drawer slides a panel in from any window edge. It supports resizing, header/footer slots, " +
+            "nested drawers, long scrollable bodies and an embedded mode for a custom display area.",
     ) {
         DemoSection(
             title = "Basic",
             description = "Choose one of the four placements; `width` applies to side drawers and `height` to top/bottom ones.",
-            code = "var show by remember { mutableStateOf(false) }\nNDrawer(\n    show = show,\n    onUpdateShow = { show = it },\n    placement = NDrawerPlacement.Right,\n    width = 400.dp,\n    title = \"Stoner\",\n) {\n    NText(\"Drawer content\")\n}",
+            code = "var show by remember { mutableStateOf(false) }\nNDrawer(show, onUpdateShow = { show = it }, title = \"Stoner\", width = 502.dp) {\n    NText(\"Drawer content\")\n}",
         ) {
             var show by remember { mutableStateOf(false) }
             var placement by remember { mutableStateOf(NDrawerPlacement.Right) }
@@ -44,7 +54,7 @@ fun DrawerDocs() {
                 show = show,
                 onUpdateShow = { show = it },
                 placement = placement,
-                width = 420.dp,
+                width = 502.dp,
                 height = 260.dp,
                 title = "Stoner",
             ) {
@@ -56,51 +66,25 @@ fun DrawerDocs() {
         }
 
         DemoSection(
-            title = "Closable & footer",
-            description = "`closable = false` hides the close icon; use the footer slot for actions.",
+            title = "Closable",
+            description = "The header close affordance is controlled by `closable`.",
         ) {
             var show by remember { mutableStateOf(false) }
-            NButton(onClick = { show = true }) { NText("Open Drawer") }
+            NButton(onClick = { show = true }) { NText("Open") }
             NDrawer(
                 show = show,
                 onUpdateShow = { show = it },
-                title = "Closable",
-                closable = false,
-                width = 380.dp,
-                footer = {
-                    NButton(size = NSize.Small, onClick = { show = false }) { NText("Close") }
-                },
+                title = "Stoner",
+                closable = true,
+                width = 502.dp,
             ) {
-                NText("This drawer has no close icon, so the footer button dismisses it.")
-            }
-        }
-
-        DemoSection(
-            title = "Scrollable",
-            description = "Long content scrolls inside the drawer while the header and footer stay fixed.",
-        ) {
-            var show by remember { mutableStateOf(false) }
-            NButton(onClick = { show = true }) { NText("Open Long Drawer") }
-            NDrawer(
-                show = show,
-                onUpdateShow = { show = it },
-                title = "Scrollable",
-                width = 420.dp,
-                footer = {
-                    NButton(size = NSize.Small, onClick = { show = false }) { NText("Done") }
-                },
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    (1..40).forEach { line ->
-                        NText("Drawer line $line")
-                    }
-                }
+                NText("Click the close icon in the header to dismiss this drawer.")
             }
         }
 
         DemoSection(
             title = "Multiple drawers",
-            description = "A drawer can open another drawer from its own content.",
+            description = "A drawer can open another drawer from its own footer.",
         ) {
             var showOuter by remember { mutableStateOf(false) }
             var showInner by remember { mutableStateOf(false) }
@@ -109,38 +93,132 @@ fun DrawerDocs() {
                 show = showOuter,
                 onUpdateShow = { showOuter = it },
                 title = "Outer Drawer",
-                width = 460.dp,
+                width = 502.dp,
+                footer = {
+                    NButton(size = NSize.Small, onClick = { showInner = true }) { NText("Come on Again!") }
+                },
             ) {
-                NText("The outer drawer hosts a second drawer.")
-                NButton(onClick = { showInner = true }) { NText("Come on Again!") }
-                NDrawer(
-                    show = showInner,
-                    onUpdateShow = { showInner = it },
-                    title = "Inner Drawer",
-                    width = 300.dp,
-                ) {
-                    NText("Nested drawers stack above the outer one.")
+                NText("Stoner is a 1965 novel by the American writer John Williams.")
+            }
+            NDrawer(
+                show = showInner,
+                onUpdateShow = { showInner = it },
+                title = "Inner Drawer",
+                width = 251.dp,
+            ) {
+                NText("Stoner is a 1965 novel by the American writer John Williams.")
+            }
+        }
+
+        DemoSection(
+            title = "Resizable drawer",
+            description = "Set `resizable = true` and drag the inner edge. Width/height start from `width`/`height`.",
+        ) {
+            var show by remember { mutableStateOf(false) }
+            var placement by remember { mutableStateOf(NDrawerPlacement.Right) }
+            NSpace(size = 8.dp, wrap = true) {
+                NDrawerPlacement.entries.forEach { value ->
+                    NButton(onClick = {
+                        placement = value
+                        show = true
+                    }) { NText(value.name) }
+                }
+            }
+            NDrawer(
+                show = show,
+                onUpdateShow = { show = it },
+                placement = placement,
+                width = 502.dp,
+                height = 320.dp,
+                resizable = true,
+                title = "Resizable",
+            ) {
+                NText("Drag the thin inner edge of this drawer to resize it.")
+            }
+        }
+
+        DemoSection(
+            title = "Scroll content",
+            description = "Long content scrolls while the header and footer stay in place.",
+        ) {
+            var show by remember { mutableStateOf(false) }
+            NButton(onClick = { show = !show }) { NText("Come on!") }
+            NDrawer(
+                show = show,
+                onUpdateShow = { show = it },
+                title = "Stoner",
+                width = 480.dp,
+                footer = {
+                    NButton(size = NSize.Small, onClick = { show = false }) { NText("Done") }
+                },
+            ) {
+                (1..18).forEach { chapter ->
+                    NText(
+                        "Chapter $chapter. William Stoner is born on a small farm in 1891. One day his father " +
+                            "suggests he should attend the University of Missouri to study agriculture. Stoner agrees " +
+                            "but, while studying a compulsory literature course, he quickly falls in love with " +
+                            "literary studies.",
+                    )
                 }
             }
         }
 
         DemoSection(
-            title = "Bottom placement",
-            description = "Top and bottom drawers use `height` and span the full window width.",
+            title = "Custom header and bottom content",
+            description = "`header` and `footer` replace the default title row and action area.",
         ) {
             var show by remember { mutableStateOf(false) }
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                NButton(onClick = { show = true }) { NText("Open Bottom Drawer") }
-                NText("A bottom drawer is useful for compact sheets.", size = 13.sp)
-            }
+            NButton(onClick = { show = true }) { NText("Open") }
             NDrawer(
                 show = show,
                 onUpdateShow = { show = it },
-                placement = NDrawerPlacement.Bottom,
-                height = 220.dp,
-                title = "Bottom",
+                header = { NText("Header", size = 16.sp, strong = true) },
+                closable = false,
+                width = 502.dp,
+                footer = {
+                    NButton(size = NSize.Small, onClick = { show = false }) { NText("Footer") }
+                },
             ) {
-                NText("The panel slides up from the bottom edge of the window.")
+                NText("The body is between the custom header and footer.")
+            }
+        }
+
+        DemoSection(
+            title = "Customize display area",
+            description = "`embedded = true` renders the drawer inside its parent area instead of the whole window.",
+        ) {
+            val theme = LocalNTheme.current
+            var show by remember { mutableStateOf(false) }
+            var placement by remember { mutableStateOf(NDrawerPlacement.Right) }
+            NSpace(size = 8.dp, wrap = true) {
+                NDrawerPlacement.entries.forEach { value ->
+                    NButton(onClick = {
+                        placement = value
+                        show = true
+                    }) { NText(value.name) }
+                }
+            }
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(300.dp)
+                    .clipToBounds()
+                    .border(1.dp, theme.colors.border, RoundedCornerShape(theme.borderRadius)),
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    NText("Target Area")
+                }
+                NDrawer(
+                    show = show,
+                    onUpdateShow = { show = it },
+                    embedded = true,
+                    placement = placement,
+                    width = 200.dp,
+                    height = 200.dp,
+                    title = "Stoner",
+                ) {
+                    NText("Stoner is a 1965 novel by the American writer John Williams.")
+                }
             }
         }
     }

@@ -2,13 +2,11 @@ package cn.enaium.naiveui.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.internal.NPlacement
 import cn.enaium.naiveui.internal.NTrigger
 import cn.enaium.naiveui.theme.LocalNTheme
@@ -17,7 +15,8 @@ import cn.enaium.naiveui.theme.LocalNTheme
  * Textual hint shown next to an element.
  *
  * Pass [text] for the common case or [content] for arbitrary popup content.
- * The tooltip opens on hover by default; [trigger] switches to click.
+ * The tooltip opens on hover by default; [trigger] switches to click or a
+ * controlled ([show]/[onUpdateShow]) manual popup.
  */
 @Composable
 fun NTooltip(
@@ -28,7 +27,10 @@ fun NTooltip(
     disabled: Boolean = false,
     delay: Long = 100,
     width: Dp? = null,
+    maxWidth: Dp? = null,
     showArrow: Boolean = true,
+    show: Boolean? = null,
+    onUpdateShow: ((Boolean) -> Unit)? = null,
     content: (@Composable () -> Unit)? = null,
     children: @Composable () -> Unit,
 ) {
@@ -38,13 +40,16 @@ fun NTooltip(
         trigger = trigger,
         placement = placement,
         width = width,
+        maxWidth = maxWidth,
         showArrow = showArrow,
         disabled = disabled,
         delay = delay,
+        show = show,
+        onUpdateShow = onUpdateShow,
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
         content = {
             Box(
-                if (width == null) Modifier.widthIn(max = 280.dp) else Modifier,
+                if (width == null && maxWidth == null) Modifier.widthIn(max = 280.dp) else Modifier,
             ) {
                 if (content != null) {
                     content()

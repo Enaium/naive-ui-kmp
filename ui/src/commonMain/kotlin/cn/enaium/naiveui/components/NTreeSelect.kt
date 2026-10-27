@@ -1,5 +1,6 @@
 package cn.enaium.naiveui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,7 +9,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,8 +29,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -63,7 +68,14 @@ data class NTreeSelectOption(
     val children: List<NTreeSelectOption> = emptyList(),
     val disabled: Boolean = false,
     val checkbox: Boolean = true,
+    val isLeaf: Boolean = children.isEmpty(),
 )
+
+/** How checked keys are reported when parents and children are both selected. */
+enum class NTreeCheckStrategy { All, Parent, Child }
+
+/** Overrides the default behavior of a node row click. */
+enum class NTreeSelectNodeBehavior { Default, ToggleExpand, ToggleSelect, ToggleCheck, None }
 
 private data class NTreeRow(val option: NTreeSelectOption, val level: Int)
 
@@ -155,24 +167,52 @@ private fun isVisuallyChecked(
 private fun hasCheckedDescendant(node: NTreeSelectOption, checked: Set<Any>): Boolean =
     node.children.any { isVisuallyChecked(it, checked, true) || hasCheckedDescendant(it, checked) }
 
-/** Keeps cascade checks canonical: parents are checked only when all their children are. */
+/**
+ * Keeps cascade checks canonical. [NTreeCheckStrategy.All] reports every
+ * checked node, [NTreeCheckStrategy.Parent] only the highest fully checked
+ * ones and [NTreeCheckStrategy.Child] only leaves.
+ */
 private fun List<NTreeSelectOption>.canonicalChecked(
     raw: Set<Any>,
     cascade: Boolean,
+    strategy: NTreeCheckStrategy,
 ): List<Any> {
     if (!cascade) return raw.toList()
-    val result = LinkedHashSet<Any>()
-    fun visit(node: NTreeSelectOption): Boolean {
+    val fullyChecked = mutableMapOf<Any, Boolean>()
+    fun compute(node: NTreeSelectOption): Boolean {
         val checked = if (node.children.isEmpty()) {
             node.key in raw
         } else {
             val active = node.children.filter { it.checkbox && !it.disabled }
-            if (active.isEmpty()) node.key in raw else active.map { visit(it) }.all { it }
+            if (active.isEmpty()) node.key in raw else active.map { compute(it) }.all { it }
         }
-        if (checked && !node.disabled) result.add(node.key)
+        fullyChecked[node.key] = checked
         return checked
     }
-    forEach { visit(it) }
+    forEach { compute(it) }
+    if (strategy == NTreeCheckStrategy.Child) {
+        val result = LinkedHashSet<Any>()
+        fun collect(node: NTreeSelectOption) {
+            if (node.children.isEmpty() && fullyChecked[node.key] == true && !node.disabled) {
+                result.add(node.key)
+            }
+            node.children.forEach(::collect)
+        }
+        forEach(::collect)
+        return result.toList()
+    }
+    val result = LinkedHashSet<Any>()
+    fun collect(node: NTreeSelectOption, parentChecked: Boolean) {
+        val checked = fullyChecked[node.key] == true
+        val report = when (strategy) {
+            NTreeCheckStrategy.All -> checked
+            NTreeCheckStrategy.Parent -> checked && !parentChecked
+            NTreeCheckStrategy.Child -> false
+        }
+        if (report && !node.disabled) result.add(node.key)
+        node.children.forEach { collect(it, checked) }
+    }
+    forEach { collect(it, false) }
     return result.toList()
 }
 
@@ -203,6 +243,13 @@ fun NTreeSelect(
     loading: Boolean = false,
     show: Boolean? = null,
     onUpdateShow: (Boolean) -> Unit = {},
+    checkStrategy: NTreeCheckStrategy = NTreeCheckStrategy.All,
+    onLoad: ((NTreeSelectOption) -> Unit)? = null,
+    loadingKeys: Set<Any> = emptySet(),
+    showLine: Boolean = false,
+    nodeClickBehavior: ((NTreeSelectOption) -> NTreeSelectNodeBehavior)? = null,
+    header: (@Composable () -> Unit)? = null,
+    action: (@Composable () -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
     val locale = LocalNLocale.current
@@ -289,7 +336,7 @@ fun NTreeSelect(
             next.add(node.key)
             node.descendants().forEach { next.add(it.key) }
         }
-        commitChecked(options.canonicalChecked(next, cascade))
+        commitChecked(options.canonicalChecked(next, cascade, checkStrategy))
     }
 
     fun toggleSelect(node: NTreeSelectOption) {
@@ -306,6 +353,7 @@ fun NTreeSelect(
             setShow(false)
         }
     }
+
 
     fun moveActive(delta: Int) {
         if (rows.isEmpty()) return
@@ -325,11 +373,27 @@ fun NTreeSelect(
     }
 
     fun toggleExpand(node: NTreeSelectOption) {
-        if (node.children.isEmpty()) return
-        expandedKeys = if (node.key in expandedKeys) {
-            expandedKeys - node.key
+        val hasChildren = node.children.isNotEmpty() || !node.isLeaf
+        if (!hasChildren) return
+        if (node.key in expandedKeys) {
+            expandedKeys = expandedKeys - node.key
         } else {
-            expandedKeys + node.key
+            expandedKeys = expandedKeys + node.key
+            if (node.children.isEmpty() && !node.isLeaf) onLoad?.invoke(node)
+        }
+    }
+
+    fun handleNodeClick(node: NTreeSelectOption) {
+        when (nodeClickBehavior?.invoke(node) ?: NTreeSelectNodeBehavior.Default) {
+            NTreeSelectNodeBehavior.ToggleExpand -> toggleExpand(node)
+            NTreeSelectNodeBehavior.ToggleCheck -> if (checkable) {
+                toggleCheck(node)
+            } else {
+                toggleSelect(node)
+            }
+            NTreeSelectNodeBehavior.ToggleSelect -> toggleSelect(node)
+            NTreeSelectNodeBehavior.None -> Unit
+            NTreeSelectNodeBehavior.Default -> toggleSelect(node)
         }
     }
 
@@ -426,7 +490,7 @@ fun NTreeSelect(
                             val removed = pathByKey[key]?.last()?.descendants()?.map { it.key }.orEmpty()
                             val next = rawValues.filterNot { it == key || it in removed }
                             if (checkable) {
-                                commitChecked(options.canonicalChecked(next.toSet(), cascade))
+                                commitChecked(options.canonicalChecked(next.toSet(), cascade, checkStrategy))
                             } else {
                                 commitChecked(next)
                             }
@@ -493,44 +557,64 @@ fun NTreeSelect(
             padding = PaddingValues(0.dp),
             modifier = Modifier.width(menuWidth),
         ) {
-            if (loading) {
-                Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), Alignment.Center) {
-                    NBaseLoading()
+            Column(Modifier.fillMaxWidth()) {
+                header?.let {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) { it() }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(theme.colors.divider))
                 }
-            } else if (rows.isEmpty()) {
-                NSelectEmptyView(Modifier.padding(vertical = 18.dp))
-            } else {
-                LaunchedEffect(activeIndex, expanded) {
-                    if (expanded && activeIndex >= 0) {
-                        val rowHeight = with(density) { nSelectionRowHeight(resolvedSize).toPx() }
-                        val target = (activeIndex * rowHeight - with(density) { 4.dp.toPx() }).roundToInt()
-                        menuScroll.animateScrollTo(target.coerceAtLeast(0))
+                if (loading) {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), Alignment.Center) {
+                        NBaseLoading()
                     }
-                }
-                NScrollbar(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
-                    scrollState = menuScroll,
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        rows.forEachIndexed { index, row ->
-                            NTreeSelectRow(
-                                row = row,
-                                expanded = row.option.key in expandedKeys,
-                                selected = rawValues.contains(row.option.key),
-                                checked = checkable &&
-                                    isVisuallyChecked(row.option, effectiveChecked, cascade),
-                                indeterminate = checkable && cascade &&
-                                    !isVisuallyChecked(row.option, effectiveChecked, cascade) &&
-                                    hasCheckedDescendant(row.option, effectiveChecked),
-                                checkable = checkable,
-                                active = index == activeIndex,
-                                size = resolvedSize,
-                                onToggleExpand = { toggleExpand(row.option) },
-                                onToggleCheck = { toggleCheck(row.option) },
-                                onClick = { toggleSelect(row.option) },
-                            )
+                } else if (rows.isEmpty()) {
+                    NSelectEmptyView(Modifier.padding(vertical = 18.dp))
+                } else {
+                    LaunchedEffect(activeIndex, expanded) {
+                        if (expanded && activeIndex >= 0) {
+                            val rowHeight = with(density) { nSelectionRowHeight(resolvedSize).toPx() }
+                            val target = (activeIndex * rowHeight - with(density) { 4.dp.toPx() }).roundToInt()
+                            menuScroll.animateScrollTo(target.coerceAtLeast(0))
                         }
                     }
+                    NScrollbar(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
+                        scrollState = menuScroll,
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            rows.forEachIndexed { index, row ->
+                                NTreeSelectRow(
+                                    row = row,
+                                    expanded = row.option.key in expandedKeys,
+                                    selected = rawValues.contains(row.option.key),
+                                    checked = checkable &&
+                                        isVisuallyChecked(row.option, effectiveChecked, cascade),
+                                    indeterminate = checkable && cascade &&
+                                        !isVisuallyChecked(row.option, effectiveChecked, cascade) &&
+                                        hasCheckedDescendant(row.option, effectiveChecked),
+                                    checkable = checkable,
+                                    active = index == activeIndex,
+                                    size = resolvedSize,
+                                    showLine = showLine,
+                                    loading = row.option.key in loadingKeys,
+                                    onToggleExpand = { toggleExpand(row.option) },
+                                    onToggleCheck = { toggleCheck(row.option) },
+                                    onClick = { handleNodeClick(row.option) },
+                                )
+                            }
+                        }
+                    }
+                }
+                action?.let {
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(theme.colors.divider))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) { it() }
                 }
             }
         }
@@ -547,12 +631,15 @@ private fun NTreeSelectRow(
     checkable: Boolean,
     active: Boolean,
     size: NSize,
+    showLine: Boolean,
+    loading: Boolean,
     onToggleExpand: () -> Unit,
     onToggleCheck: () -> Unit,
     onClick: () -> Unit,
 ) {
     val theme = LocalNTheme.current
     val node = row.option
+    val hasChildren = node.children.isNotEmpty() || !node.isLeaf
     NSelectionMenuRow(
         onClick = onClick,
         enabled = !node.disabled,
@@ -560,22 +647,49 @@ private fun NTreeSelectRow(
         height = nSelectionRowHeight(size),
         contentPadding = PaddingValues(start = 8.dp, end = 12.dp),
     ) {
-        Spacer(Modifier.width((row.level * 14).dp))
-        if (node.children.isNotEmpty()) {
-            val chevronInteraction = remember { MutableInteractionSource() }
-            Box(
-                Modifier
-                    .size(20.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .nClickable(chevronInteraction) { onToggleExpand() },
-                contentAlignment = Alignment.Center,
-            ) {
-                NIcon(
-                    NIcons.ChevronRight,
-                    modifier = Modifier.rotate(if (expanded) 90f else 0f),
-                    size = 14.dp,
-                    color = if (node.disabled) theme.colors.iconDisabled else theme.colors.icon,
+        if (showLine) {
+            repeat(row.level) {
+                Box(
+                    Modifier
+                        .width(14.dp)
+                        .fillMaxHeight()
+                        .drawBehind {
+                            val lineWidth = this.size.width
+                            val lineHeight = this.size.height
+                            val x = lineWidth / 2
+                            drawLine(
+                                color = theme.colors.divider,
+                                start = Offset(x, 0f),
+                                end = Offset(x, lineHeight),
+                                strokeWidth = 1.dp.toPx(),
+                            )
+                        },
                 )
+            }
+        } else {
+            Spacer(Modifier.width((row.level * 14).dp))
+        }
+        if (hasChildren) {
+            if (loading) {
+                Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                    NBaseLoading(size = 12.dp)
+                }
+            } else {
+                val chevronInteraction = remember { MutableInteractionSource() }
+                Box(
+                    Modifier
+                        .size(20.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .nClickable(chevronInteraction) { onToggleExpand() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    NIcon(
+                        NIcons.ChevronRight,
+                        modifier = Modifier.rotate(if (expanded) 90f else 0f),
+                        size = 14.dp,
+                        color = if (node.disabled) theme.colors.iconDisabled else theme.colors.icon,
+                    )
+                }
             }
         } else {
             Spacer(Modifier.width(20.dp))

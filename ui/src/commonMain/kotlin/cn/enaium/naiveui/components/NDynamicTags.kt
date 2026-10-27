@@ -29,18 +29,19 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
-import cn.enaium.naiveui.components.NButton
-import cn.enaium.naiveui.components.NTag
-import cn.enaium.naiveui.components.NText
-import cn.enaium.naiveui.components.NSpace
 import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.internal.nBorder
-import cn.enaium.naiveui.theme.LocalNLocale
 import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NSize
 import cn.enaium.naiveui.theme.NStatus
 import cn.enaium.naiveui.theme.nSize
+
+/** Object formatted tag value, created through `onCreate`. */
+data class NDynamicTagsOption(val label: String, val value: String)
+
+@Suppress("UNCHECKED_CAST")
+private fun <T> castTag(value: Any?): T = value as T
 
 private fun dynamicTagsSmallerSize(size: NSize): NSize = when (size) {
     NSize.Tiny -> NSize.Tiny
@@ -50,13 +51,13 @@ private fun dynamicTagsSmallerSize(size: NSize): NSize = when (size) {
 }
 
 /**
- * Editable list of tags. Clicking the add button reveals an inline input that
+ * Editable list of tags. Clicking the trigger reveals an inline input that
  * commits on Enter or blur; tags can be removed through their close icon.
  */
 @Composable
-fun NDynamicTags(
-    value: List<String>,
-    onValueChange: (List<String>) -> Unit,
+fun <T> NDynamicTags(
+    value: List<T>,
+    onValueChange: (List<T>) -> Unit,
     modifier: Modifier = Modifier,
     max: Int? = null,
     size: NSize? = null,
@@ -64,10 +65,14 @@ fun NDynamicTags(
     disabled: Boolean = false,
     type: NStatus = NStatus.Default,
     round: Boolean = false,
-    placeholder: String? = null,
+    placeholder: String = "Add",
+    label: (T) -> String = { it.toString() },
+    onCreate: ((String) -> T)? = null,
+    renderTag: (@Composable (tag: T, index: Int, onClose: () -> Unit) -> Unit)? = null,
+    inputSlot: (@Composable (submit: (String) -> Unit, deactivate: () -> Unit) -> Unit)? = null,
+    triggerSlot: (@Composable (activate: () -> Unit, disabled: Boolean) -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
-    val locale = LocalNLocale.current
     val resolvedSize = nSize(size)
     val inputSize = dynamicTagsSmallerSize(resolvedSize)
     var showInput by remember { mutableStateOf(false) }
@@ -76,85 +81,105 @@ fun NDynamicTags(
     val focusRequester = remember { FocusRequester() }
     val triggerDisabled = disabled || (max != null && value.size >= max)
 
-    fun commit() {
-        if (!showInput) return
-        val text = inputValue.trim()
-        if (text.isNotEmpty() && (max == null || value.size < max)) {
-            onValueChange(value + text)
+    fun submitTag(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isNotEmpty() && (max == null || value.size < max)) {
+            onValueChange(value + (onCreate?.invoke(trimmed) ?: castTag<T>(trimmed)))
         }
         showInput = false
         inputValue = ""
     }
 
+    fun commit() {
+        if (showInput) submitTag(inputValue)
+    }
+
+    fun deactivate() {
+        showInput = false
+        inputValue = ""
+    }
+
+    fun remove(index: Int) {
+        onValueChange(value.toMutableList().apply { removeAt(index) })
+    }
+
     LaunchedEffect(showInput) {
-        if (showInput) focusRequester.requestFocus()
+        if (showInput && inputSlot == null) focusRequester.requestFocus()
     }
 
     NSpace(modifier = modifier, size = 8.dp, wrap = true) {
         value.forEachIndexed { index, tag ->
             composeKey(index) {
-                NTag(
-                    text = tag,
-                    size = resolvedSize,
-                    type = type,
-                    round = round,
-                    closable = closable && !disabled,
-                    disabled = disabled,
-                    onClose = {
-                        onValueChange(value.toMutableList().apply { removeAt(index) })
-                    },
-                )
+                if (renderTag != null) {
+                    renderTag(tag, index) { remove(index) }
+                } else {
+                    NTag(
+                        text = label(tag),
+                        size = resolvedSize,
+                        type = type,
+                        round = round,
+                        closable = closable && !disabled,
+                        disabled = disabled,
+                        onClose = { remove(index) },
+                    )
+                }
             }
         }
         if (showInput) {
-            val textStyle = TextStyle(
-                color = theme.colors.text1,
-                fontSize = theme.fontSizeFor(inputSize),
-                fontFamily = theme.typography.fontFamily,
-            )
-            Box(
-                Modifier
-                    .width(96.dp)
-                    .height(theme.heightFor(inputSize))
-                    .clip(RoundedCornerShape(theme.borderRadius))
-                    .background(theme.colors.input)
-                    .nBorder(theme.colors.primary, 1.dp, theme.borderRadius)
-                    .padding(horizontal = 8.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                if (inputValue.isEmpty()) {
-                    NText(
-                        text = placeholder ?: locale.dynamicTags.add,
-                        color = theme.colors.placeholder,
-                        size = theme.fontSizeFor(inputSize),
+            if (inputSlot != null) {
+                inputSlot({ text -> submitTag(text) }, { deactivate() })
+            } else {
+                val textStyle = TextStyle(
+                    color = theme.colors.text1,
+                    fontSize = theme.fontSizeFor(inputSize),
+                    fontFamily = theme.typography.fontFamily,
+                )
+                Box(
+                    Modifier
+                        .width(96.dp)
+                        .height(theme.heightFor(inputSize))
+                        .clip(RoundedCornerShape(theme.borderRadius))
+                        .background(theme.colors.input)
+                        .nBorder(theme.colors.primary, 1.dp, theme.borderRadius)
+                        .padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (inputValue.isEmpty()) {
+                        NText(
+                            text = placeholder,
+                            color = theme.colors.placeholder,
+                            size = theme.fontSizeFor(inputSize),
+                        )
+                    }
+                    BasicTextField(
+                        value = inputValue,
+                        onValueChange = { inputValue = it },
+                        textStyle = textStyle,
+                        singleLine = true,
+                        cursorBrush = SolidColor(theme.colors.primary),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester)
+                            .onFocusChanged { state ->
+                                if (hadFocus && !state.isFocused) commit()
+                                hadFocus = state.isFocused
+                            }
+                            .onPreviewKeyEvent { event ->
+                                if (
+                                    event.type == KeyEventType.KeyDown &&
+                                    (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                                ) {
+                                    commit()
+                                    true
+                                } else {
+                                    false
+                                }
+                            },
                     )
                 }
-                BasicTextField(
-                    value = inputValue,
-                    onValueChange = { inputValue = it },
-                    textStyle = textStyle,
-                    singleLine = true,
-                    cursorBrush = SolidColor(theme.colors.primary),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester)
-                        .onFocusChanged { state ->
-                            if (hadFocus && !state.isFocused) commit()
-                            hadFocus = state.isFocused
-                        }
-                        .onPreviewKeyEvent { event ->
-                            if (
-                                event.type == KeyEventType.KeyDown &&
-                                (event.key == Key.Enter || event.key == Key.NumPadEnter)
-                            ) {
-                                commit()
-                                true
-                            } else {
-                                false
-                            }
-                        },
-                )
             }
+        } else if (triggerSlot != null) {
+            triggerSlot({ if (!triggerDisabled) showInput = true }, triggerDisabled)
         } else {
             NButton(
                 onClick = { if (!triggerDisabled) showInput = true },

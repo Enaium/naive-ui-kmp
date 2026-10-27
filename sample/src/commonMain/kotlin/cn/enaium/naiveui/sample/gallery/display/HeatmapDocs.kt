@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.components.NHeatmap
 import cn.enaium.naiveui.components.NHeatmapCell
+import cn.enaium.naiveui.components.NHeatmapColorTheme
 import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.sample.gallery.DemoSection
 import cn.enaium.naiveui.sample.gallery.DocsPage
@@ -36,11 +37,11 @@ fun HeatmapDocs() {
     val data = remember { heatmapData() }
     DocsPage(
         title = "Heatmap",
-        description = "Display values on a grid with interpolated colors and hover tooltips.",
+        description = "Display values on a grid with interpolated colors, themed palettes and hover tooltips.",
     ) {
         DemoSection(
             title = "Basic",
-            description = "Cells are addressed by column and row, and the default scale follows the theme.",
+            description = "Cells are addressed by column and row; the default scale follows the theme.",
             code = "NHeatmap(data = cells, xLabels = weekdays, yLabels = weeks)",
         ) {
             NHeatmap(
@@ -48,6 +49,32 @@ fun HeatmapDocs() {
                 xLabels = weekdayLabels,
                 yLabels = weekLabels,
             )
+        }
+        DemoSection(
+            title = "Built-in themes",
+            description = "colorTheme selects green, blue, orange, purple or red palettes.",
+            code = "NHeatmap(data = data, colorTheme = NHeatmapColorTheme.Blue)",
+        ) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                listOf(
+                    NHeatmapColorTheme.Green,
+                    NHeatmapColorTheme.Blue,
+                    NHeatmapColorTheme.Orange,
+                    NHeatmapColorTheme.Purple,
+                    NHeatmapColorTheme.Red,
+                ).forEach { colorTheme ->
+                    NText(
+                        text = colorTheme.name,
+                        size = theme.typography.fontSize.small,
+                        color = theme.colors.text3,
+                    )
+                    NHeatmap(
+                        data = data,
+                        colorTheme = colorTheme,
+                        cellSize = 20.dp,
+                    )
+                }
+            }
         }
         DemoSection(
             title = "Custom colors",
@@ -66,35 +93,44 @@ fun HeatmapDocs() {
             )
         }
         DemoSection(
-            title = "Values",
-            description = "showValues prints the formatted value inside each cell.",
+            title = "Slots",
+            description = "footer and indicator render below the grid; customTooltip replaces the hover card.",
+            code = "NHeatmap(data = data, footer = { ... }, indicator = { ... }, customTooltip = { cell -> ... })",
         ) {
             NHeatmap(
                 data = data,
                 xLabels = weekdayLabels,
                 yLabels = weekLabels,
-                showValues = true,
-                cellSize = 34.dp,
-                valueFormatter = { value -> value.toInt().toString() },
+                footer = {
+                    NText(
+                        text = "Left footer slot",
+                        size = theme.typography.fontSize.small,
+                        color = theme.colors.text3,
+                    )
+                },
+                indicator = {
+                    NText(
+                        text = "Right indicator slot",
+                        size = theme.typography.fontSize.small,
+                        color = theme.colors.text3,
+                    )
+                },
+                customTooltip = { cell ->
+                    Column {
+                        NText(
+                            text = "Custom tooltip",
+                            size = theme.typography.fontSize.small,
+                            color = theme.colors.text3,
+                        )
+                        NText(
+                            text = "Value ${cell?.value?.toInt() ?: 0}",
+                            size = theme.typography.fontSize.small,
+                            color = theme.colors.text1,
+                            strong = true,
+                        )
+                    }
+                },
             )
-        }
-        DemoSection(
-            title = "Tooltip",
-            description = "Hover a cell to preview its labels and value; disable it with tooltip = false.",
-        ) {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                NHeatmap(
-                    data = data,
-                    xLabels = weekdayLabels,
-                    yLabels = weekLabels,
-                    cellSize = 30.dp,
-                )
-                NText(
-                    text = "Hover any filled cell.",
-                    size = theme.typography.fontSize.small,
-                    color = theme.colors.text3,
-                )
-            }
         }
     }
 }

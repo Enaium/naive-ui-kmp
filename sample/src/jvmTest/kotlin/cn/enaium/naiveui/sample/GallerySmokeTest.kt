@@ -47,6 +47,30 @@ class GallerySmokeTest {
     }
 
     @Test
+    fun docsPageLinksToSampleSource() = runComposeUiTest {
+        var opened: String? = null
+        setContent {
+            CompositionLocalProvider(
+                LocalUriHandler provides object : UriHandler {
+                    override fun openUri(uri: String) {
+                        opened = uri
+                    }
+                },
+            ) {
+                App()
+            }
+        }
+        onNodeWithText("View sample source").performClick()
+        runOnIdle {
+            kotlin.test.assertEquals(
+                "https://github.com/enaium/naive-ui-kmp/blob/main/" +
+                    "sample/src/commonMain/kotlin/cn/enaium/naiveui/sample/gallery/general/ButtonDocs.kt",
+                opened,
+            )
+        }
+    }
+
+    @Test
     fun galleryRendersAndNavigates() = runComposeUiTest {
         setContent { App() }
         onNodeWithText("Naive UI").assertExists()

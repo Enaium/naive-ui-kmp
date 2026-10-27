@@ -72,6 +72,8 @@ fun NInputOtp(
     modifier: Modifier = Modifier,
     length: Int = 6,
     separator: String? = null,
+    separatorAt: ((Int) -> Boolean)? = null,
+    gap: Dp = 8.dp,
     size: NSize? = null,
     status: NStatus? = null,
     disabled: Boolean = false,
@@ -79,6 +81,7 @@ fun NInputOtp(
     mask: Boolean = false,
     autofocus: Boolean = false,
     block: Boolean = false,
+    allowInput: ((char: String, index: Int, currentValue: String) -> Boolean)? = null,
     onFinish: ((String) -> Unit)? = null,
     onFocus: (() -> Unit)? = null,
     onBlur: (() -> Unit)? = null,
@@ -88,7 +91,12 @@ fun NInputOtp(
     val height = theme.heightFor(resolvedSize)
     val cellWidth = otpCellWidth(resolvedSize)
     val fontSize = theme.fontSizeFor(resolvedSize)
-    val statusColors = if (status != null && status != NStatus.Default) theme.colors.status(status) else null
+    val effectiveStatus = status ?: LocalNFormItemStatus.current
+    val statusColors = if (effectiveStatus != null && effectiveStatus != NStatus.Default) {
+        theme.colors.status(effectiveStatus)
+    } else {
+        null
+    }
     val cells = List(length.coerceAtLeast(1)) { index ->
         value.getOrNull(index)?.takeIf { it != ' ' }
     }
@@ -123,13 +131,17 @@ fun NInputOtp(
 
     Row(
         modifier = modifier.then(if (block) Modifier.fillMaxWidth() else Modifier),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(gap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         repeat(cells.size) { index ->
-            if (separator != null && cells.size > 1 && index == cells.size / 2) {
+            val divider = separator
+            val at = separatorAt
+            val showSeparator = divider != null && index > 0 &&
+                if (at != null) at(index - 1) else index == cells.size / 2
+            if (showSeparator) {
                 NBaseText(
-                    text = separator,
+                    text = divider ?: "",
                     style = theme.typography.style(fontSize, color = theme.colors.text3),
                     modifier = Modifier.padding(horizontal = 2.dp),
                 )
@@ -166,6 +178,10 @@ fun NInputOtp(
                     onValueChange = { raw ->
                         val chars = raw.filter { !it.isWhitespace() }
                         val current = cells[index]?.toString() ?: ""
+                        val currentText = cells.joinToString("") { it?.toString() ?: " " }.trimEnd()
+                        val predicate = allowInput
+                        fun accepted(char: Char, at: Int): Boolean =
+                            predicate == null || predicate(char.toString(), at, currentText)
                         if (chars.isEmpty()) {
                             setChar(index, null)
                             if (index > 0) focusCell(index - 1)
@@ -178,14 +194,17 @@ fun NInputOtp(
                                 var cursor = index
                                 for (char in chars) {
                                     if (cursor >= next.size) break
-                                    next[cursor] = char
+                                    if (accepted(char, cursor)) next[cursor] = char
                                     cursor++
                                 }
                                 emit(next)
                                 focusCell(cursor)
                             } else {
-                                setChar(index, chars.last())
-                                if (index < cells.lastIndex) focusCell(index + 1)
+                                val char = chars.last()
+                                if (accepted(char, index)) {
+                                    setChar(index, char)
+                                    if (index < cells.lastIndex) focusCell(index + 1)
+                                }
                             }
                         }
                     },
@@ -219,7 +238,11 @@ fun NInputOtp(
                     singleLine = true,
                     visualTransformation = if (mask) PasswordVisualTransformation() else VisualTransformation.None,
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = if (mask) KeyboardType.NumberPassword else KeyboardType.Number,
+                        keyboardType = when {
+                            allowInput != null -> KeyboardType.Text
+                            mask -> KeyboardType.NumberPassword
+                            else -> KeyboardType.Number
+                        },
                     ),
                     cursorBrush = SolidColor(statusColors?.color ?: theme.colors.primary),
                     interactionSource = interaction,

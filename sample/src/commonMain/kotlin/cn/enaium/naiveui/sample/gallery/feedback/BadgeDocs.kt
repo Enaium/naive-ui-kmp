@@ -17,6 +17,8 @@ import cn.enaium.naiveui.components.NAvatar
 import cn.enaium.naiveui.components.NButton
 import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.components.NFlex
+import cn.enaium.naiveui.icons.NIcon
+import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.sample.gallery.DemoSection
 import cn.enaium.naiveui.sample.gallery.DocsPage
 
@@ -42,7 +44,7 @@ fun BadgeDocs() {
             }
         }
         DemoSection(
-            title = "Type",
+            title = "Types",
             description = "Badges support default, error, info, success and warning types.",
         ) {
             NFlex(size = 24.dp, wrap = true, align = cn.enaium.naiveui.components.NAlign.Center) {
@@ -90,7 +92,7 @@ fun BadgeDocs() {
             }
         }
         DemoSection(
-            title = "Controlled visibility",
+            title = "Manual",
             description = "Toggle the badge without removing its content.",
         ) {
             var value by remember { mutableStateOf(5) }
@@ -107,15 +109,20 @@ fun BadgeDocs() {
         }
         DemoSection(
             title = "Custom content",
-            description = "String values allow words like \"new\" or \"hot\".",
+            description = "String values allow words like \"new\" or \"hot\"; valueContent accepts any composable.",
         ) {
             NFlex(size = 24.dp, wrap = true, align = cn.enaium.naiveui.components.NAlign.Center) {
                 NBadge(value = "new") { NAvatar() }
                 NBadge(value = "hot") { NAvatar() }
+                NBadge(
+                    valueContent = {
+                        NIcon(NIcons.Person, size = 12.dp, color = Color.White)
+                    },
+                ) { NAvatar() }
             }
         }
         DemoSection(
-            title = "Customize color",
+            title = "Color",
             description = "Override the badge color directly.",
         ) {
             NBadge(value = "15", color = Color(0xFF888888)) { NAvatar() }

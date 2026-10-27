@@ -33,6 +33,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.icons.NIcon
+import cn.enaium.naiveui.internal.NBaseLoading
 import cn.enaium.naiveui.internal.NBaseText
 import cn.enaium.naiveui.internal.NClearButton
 import cn.enaium.naiveui.internal.nBorder
@@ -102,8 +104,18 @@ fun NInputNumber(
     status: NStatus? = null,
     showButton: Boolean = true,
     buttonPlacement: NInputNumberButtonPlacement = NInputNumberButtonPlacement.Right,
+    loading: Boolean = false,
+    updateValueOnInput: Boolean = true,
+    parse: ((String) -> Double?)? = null,
+    format: ((Double?) -> String)? = null,
+    validator: ((Double) -> Boolean)? = null,
+    keyboardEnabled: Boolean = true,
+    minusIcon: ImageVector? = null,
+    addIcon: ImageVector? = null,
     prefix: (@Composable () -> Unit)? = null,
     suffix: (@Composable () -> Unit)? = null,
+    onFocus: (() -> Unit)? = null,
+    onBlur: (() -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
     val resolvedSize = nSize(size)
@@ -112,13 +124,83 @@ fun NInputNumber(
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val hovered by interaction.collectIsHoveredAsState()
-    var text by remember { mutableStateOf(formatNumber(value, precision)) }
 
-    LaunchedEffect(value, focused) {
-        if (!focused) text = formatNumber(value, precision)
+    fun display(next: Double?): String = format?.invoke(next) ?: formatNumber(next, precision)
+
+    var text by remember { mutableStateOf(display(value)) }
+
+    fun parseText(raw: String): Double? {
+        val parser = parse
+        if (parser != null) return parser(raw)
+        if (raw.isBlank() || raw == "-" || raw == "." || raw == "-.") return null
+        return raw.toDoubleOrNull()
     }
 
-    val statusColors = if (status != null && status != NStatus.Default) theme.colors.status(status) else null
+    fun normalize(next: Double): Double {
+        var result = applyPrecision(next, precision)
+        if (min != null) result = maxOf(result, min)
+        if (max != null) result = minOf(result, max)
+        return applyPrecision(result, precision)
+    }
+
+    fun valid(next: Double): Boolean = validator?.invoke(next) ?: true
+
+    fun emitFromText(raw: String) {
+        if (!updateValueOnInput || parse != null) return
+        val parsed = parseText(raw)
+        if (parsed == null) {
+            onValueChange(null)
+            return
+        }
+        val normalized = normalize(parsed)
+        if (valid(normalized)) onValueChange(normalized)
+    }
+
+    fun commit() {
+        val parsed = parseText(text)
+        if (parsed == null) {
+            onValueChange(null)
+            text = ""
+            return
+        }
+        val normalized = normalize(parsed)
+        if (valid(normalized)) {
+            onValueChange(normalized)
+            text = display(normalized)
+        } else {
+            text = display(value)
+        }
+    }
+
+    fun stepBy(delta: Double) {
+        val base = parseText(text) ?: value ?: 0.0
+        val next = normalize(base + delta)
+        if (!valid(next)) return
+        text = display(next)
+        onValueChange(next)
+    }
+
+    LaunchedEffect(value) {
+        if (!focused) text = display(value)
+    }
+
+    var hasFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(focused) {
+        if (focused) {
+            hasFocused = true
+            onFocus?.invoke()
+        } else if (hasFocused) {
+            commit()
+            onBlur?.invoke()
+        }
+    }
+
+    val effectiveStatus = status ?: LocalNFormItemStatus.current
+    val statusColors = if (effectiveStatus != null && effectiveStatus != NStatus.Default) {
+        theme.colors.status(effectiveStatus)
+    } else {
+        null
+    }
     val borderColor = when {
         disabled -> theme.colors.border
         statusColors != null -> if (focused || hovered) statusColors.hover else statusColors.color
@@ -134,30 +216,7 @@ fun NInputNumber(
     val textStyle = theme.typography.style(fontSize, color = textColor)
     val shape = RoundedCornerShape(theme.borderRadius)
     val background = if (disabled) theme.colors.inputDisabled else theme.colors.input
-    val current = text.toDoubleOrNull() ?: value
-
-    fun normalize(next: Double): Double {
-        var result = applyPrecision(next, precision)
-        if (min != null) result = maxOf(result, min)
-        if (max != null) result = minOf(result, max)
-        return applyPrecision(result, precision)
-    }
-
-    fun commit(nextText: String) {
-        if (nextText.isBlank() || nextText == "-" || nextText == "." || nextText == "-.") {
-            onValueChange(null)
-            return
-        }
-        val parsed = nextText.toDoubleOrNull() ?: return
-        onValueChange(normalize(parsed))
-    }
-
-    fun stepBy(delta: Double) {
-        val base = text.toDoubleOrNull() ?: value ?: 0.0
-        val next = normalize(base + delta)
-        text = formatNumber(next, precision)
-        onValueChange(next)
-    }
+    val current = parseText(text) ?: value
 
     val canDecrement = !disabled && !readonly && (min == null || current == null || current > min)
     val canIncrement = !disabled && !readonly && (max == null || current == null || current < max)
@@ -180,7 +239,7 @@ fun NInputNumber(
     ) {
         if (showBothControls) {
             NNumberStepButton(
-                icon = NIcons.Remove,
+                icon = minusIcon ?: NIcons.Remove,
                 enabled = canDecrement,
                 height = height,
                 onClick = { stepBy(-step) },
@@ -192,6 +251,8 @@ fun NInputNumber(
                 canDecrement = canDecrement,
                 onIncrement = { stepBy(step) },
                 onDecrement = { stepBy(-step) },
+                addIcon = addIcon,
+                minusIcon = minusIcon,
             )
         }
         Row(
@@ -215,15 +276,16 @@ fun NInputNumber(
                 BasicTextField(
                     value = text,
                     onValueChange = { next ->
-                        if (!readonly && NNumberPattern.matches(next)) {
+                        val allowed = parse != null || NNumberPattern.matches(next)
+                        if (!readonly && allowed) {
                             text = next
-                            commit(next)
+                            emitFromText(next)
                         }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
                         .onPreviewKeyEvent { event ->
-                            if (event.type != KeyEventType.KeyDown || disabled) {
+                            if (event.type != KeyEventType.KeyDown || disabled || !keyboardEnabled) {
                                 return@onPreviewKeyEvent false
                             }
                             when (event.key) {
@@ -236,8 +298,7 @@ fun NInputNumber(
                                     true
                                 }
                                 Key.Enter -> {
-                                    text = formatNumber((text.toDoubleOrNull() ?: value)?.let { normalize(it) }, precision)
-                                    commit(text)
+                                    commit()
                                     true
                                 }
                                 else -> false
@@ -249,14 +310,14 @@ fun NInputNumber(
                     singleLine = true,
                     cursorBrush = SolidColor(statusColors?.color ?: theme.colors.primary),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            text = formatNumber((text.toDoubleOrNull() ?: value)?.let(::normalize), precision)
-                            commit(text)
-                        },
-                    ),
+                    keyboardActions = KeyboardActions(onDone = { commit() }),
                     interactionSource = interaction,
                 )
+            }
+            if (loading) {
+                Box(Modifier.padding(start = 4.dp)) {
+                    NBaseLoading(size = 14.dp, color = statusColors?.color ?: theme.colors.primary)
+                }
             }
             if (suffix != null) {
                 Row(Modifier.padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) { suffix() }
@@ -276,7 +337,7 @@ fun NInputNumber(
         }
         if (showBothControls) {
             NNumberStepButton(
-                icon = NIcons.Add,
+                icon = addIcon ?: NIcons.Add,
                 enabled = canIncrement,
                 height = height,
                 onClick = { stepBy(step) },
@@ -288,6 +349,8 @@ fun NInputNumber(
                 canDecrement = canDecrement,
                 onIncrement = { stepBy(step) },
                 onDecrement = { stepBy(-step) },
+                addIcon = addIcon,
+                minusIcon = minusIcon,
             )
         }
     }
@@ -311,8 +374,16 @@ fun NInputNumber(
     status: NStatus? = null,
     showButton: Boolean = true,
     buttonPlacement: NInputNumberButtonPlacement = NInputNumberButtonPlacement.Right,
+    loading: Boolean = false,
+    updateValueOnInput: Boolean = true,
+    validator: ((Int) -> Boolean)? = null,
+    keyboardEnabled: Boolean = true,
+    minusIcon: ImageVector? = null,
+    addIcon: ImageVector? = null,
     prefix: (@Composable () -> Unit)? = null,
     suffix: (@Composable () -> Unit)? = null,
+    onFocus: (() -> Unit)? = null,
+    onBlur: (() -> Unit)? = null,
 ) {
     NInputNumber(
         value = value?.toDouble(),
@@ -330,8 +401,16 @@ fun NInputNumber(
         status = status,
         showButton = showButton,
         buttonPlacement = buttonPlacement,
+        loading = loading,
+        updateValueOnInput = updateValueOnInput,
+        validator = validator?.let { check -> { next: Double -> check(next.roundToInt()) } },
+        keyboardEnabled = keyboardEnabled,
+        minusIcon = minusIcon,
+        addIcon = addIcon,
         prefix = prefix,
         suffix = suffix,
+        onFocus = onFocus,
+        onBlur = onBlur,
     )
 }
 
@@ -342,16 +421,18 @@ private fun NNumberStepper(
     canDecrement: Boolean,
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
+    addIcon: ImageVector?,
+    minusIcon: ImageVector?,
 ) {
     Column {
         NNumberStepButton(
-            icon = NIcons.ArrowUp,
+            icon = addIcon ?: NIcons.ArrowUp,
             enabled = canIncrement,
             height = height / 2,
             onClick = onIncrement,
         )
         NNumberStepButton(
-            icon = NIcons.ChevronDownFilled,
+            icon = minusIcon ?: NIcons.ChevronDownFilled,
             enabled = canDecrement,
             height = height / 2,
             onClick = onDecrement,
@@ -361,7 +442,7 @@ private fun NNumberStepper(
 
 @Composable
 private fun NNumberStepButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     enabled: Boolean,
     height: Dp,
     onClick: () -> Unit,

@@ -24,6 +24,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,6 +37,9 @@ import cn.enaium.naiveui.theme.NStatus
 
 /** Line style of a timeline item. */
 enum class NTimelineLineType { Default, Dashed }
+
+/** Side of the vertical timeline the content is placed on. */
+enum class NTimelinePlacement { Left, Right }
 
 /**
  * A single timeline entry.
@@ -64,6 +68,7 @@ fun NTimeline(
     items: List<NTimelineItem>,
     modifier: Modifier = Modifier,
     horizontal: Boolean = false,
+    itemPlacement: NTimelinePlacement = NTimelinePlacement.Left,
     size: NSize = NSize.Medium,
     iconSize: Dp = 14.dp,
     icon: (@Composable (NTimelineItem) -> Unit)? = null,
@@ -86,6 +91,7 @@ fun NTimeline(
                 NTimelineVerticalItem(
                     item = item,
                     isLast = index == items.lastIndex,
+                    placement = itemPlacement,
                     size = size,
                     iconSize = iconSize,
                     globalIcon = icon,
@@ -99,15 +105,13 @@ fun NTimeline(
 private fun NTimelineVerticalItem(
     item: NTimelineItem,
     isLast: Boolean,
+    placement: NTimelinePlacement,
     size: NSize,
     iconSize: Dp,
     globalIcon: (@Composable (NTimelineItem) -> Unit)?,
 ) {
     val theme = LocalNTheme.current
     val titleSize = if (size == NSize.Large) 16.sp else 14.sp
-    val titleStyle = theme.typography.style(titleSize, theme.typography.fontWeightStrong, theme.colors.text1)
-    val contentStyle = theme.typography.style(theme.typography.fontSize.medium, color = theme.colors.text2)
-    val timeStyle = theme.typography.style(12.sp, color = theme.colors.text3)
     val accent = item.color
         ?: if (item.type == NStatus.Default) theme.colors.text3 else theme.colors.statusColor(item.type)
     val dashed = item.lineType == NTimelineLineType.Dashed
@@ -120,68 +124,142 @@ private fun NTimelineVerticalItem(
         globalIcon != null -> { { globalIcon(item) } }
         else -> null
     }
+    val bottomPadding = if (isLast) 0.dp else 20.dp
+    val right = placement == NTimelinePlacement.Right
 
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-        Box(Modifier.width(iconSize + 12.dp).fillMaxHeight()) {
-            if (!isLast) {
-                Canvas(Modifier.fillMaxSize()) {
-                    val x = iconSize.toPx() / 2f
-                    val startY = circleTop.toPx() + iconSize.toPx()
-                    drawLine(
-                        color = theme.colors.rail,
-                        start = Offset(x, startY),
-                        end = Offset(x, this.size.height),
-                        strokeWidth = 2.dp.toPx(),
-                        pathEffect = if (dashed) {
-                            PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
-                        } else {
-                            null
-                        },
-                    )
-                }
-            }
-            Box(
-                Modifier
-                    .offset(y = circleTop)
-                    .size(iconSize),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (iconSlot != null) {
-                    NIcon(size = iconSize, color = accent) {
-                        iconSlot()
-                    }
-                } else {
-                    Box(
-                        Modifier
-                            .matchParentSize()
-                            .clip(CircleShape)
-                            .nBorder(accent, 2.dp, iconSize / 2),
-                    )
-                }
+        if (!right) {
+            NTimelineMarker(
+                modifier = Modifier.width(iconSize + 12.dp).fillMaxHeight(),
+                isLast = isLast,
+                iconSize = iconSize,
+                circleTop = circleTop,
+                accent = accent,
+                dashed = dashed,
+                iconSlot = iconSlot,
+                alignEnd = false,
+            )
+            NTimelineTextContent(
+                item = item,
+                size = size,
+                modifier = Modifier.weight(1f).padding(bottom = bottomPadding),
+                alignEnd = false,
+            )
+        } else {
+            NTimelineTextContent(
+                item = item,
+                size = size,
+                modifier = Modifier.weight(1f).padding(bottom = bottomPadding),
+                alignEnd = true,
+            )
+            NTimelineMarker(
+                modifier = Modifier.width(iconSize + 12.dp).fillMaxHeight(),
+                isLast = isLast,
+                iconSize = iconSize,
+                circleTop = circleTop,
+                accent = accent,
+                dashed = dashed,
+                iconSlot = iconSlot,
+                alignEnd = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NTimelineMarker(
+    modifier: Modifier,
+    isLast: Boolean,
+    iconSize: Dp,
+    circleTop: Dp,
+    accent: Color,
+    dashed: Boolean,
+    iconSlot: (@Composable () -> Unit)?,
+    alignEnd: Boolean,
+) {
+    val theme = LocalNTheme.current
+    Box(modifier) {
+        if (!isLast) {
+            Canvas(Modifier.fillMaxSize()) {
+                val x = if (alignEnd) size.width - iconSize.toPx() / 2f else iconSize.toPx() / 2f
+                val startY = circleTop.toPx() + iconSize.toPx()
+                drawLine(
+                    color = theme.colors.rail,
+                    start = Offset(x, startY),
+                    end = Offset(x, this.size.height),
+                    strokeWidth = 2.dp.toPx(),
+                    pathEffect = if (dashed) {
+                        PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
+                    } else {
+                        null
+                    },
+                )
             }
         }
-        Column(
+        Box(
             Modifier
-                .weight(1f)
-                .padding(bottom = if (isLast) 0.dp else 20.dp),
+                .align(if (alignEnd) Alignment.TopEnd else Alignment.TopStart)
+                .offset(y = circleTop)
+                .size(iconSize),
+            contentAlignment = Alignment.Center,
         ) {
-            if (item.title != null) {
-                BasicText(
-                    text = item.title,
-                    style = titleStyle,
-                    modifier = Modifier.padding(bottom = 6.dp),
+            if (iconSlot != null) {
+                NIcon(size = iconSize, color = accent) {
+                    iconSlot()
+                }
+            } else {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .clip(CircleShape)
+                        .nBorder(accent, 2.dp, iconSize / 2),
                 )
             }
-            if (item.content != null) {
-                BasicText(text = item.content, style = contentStyle)
-            }
-            if (item.time != null) {
-                BasicText(
-                    text = item.time,
-                    style = timeStyle,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
+        }
+    }
+}
+
+@Composable
+private fun NTimelineTextContent(
+    item: NTimelineItem,
+    size: NSize,
+    modifier: Modifier,
+    alignEnd: Boolean,
+) {
+    val theme = LocalNTheme.current
+    val titleSize = if (size == NSize.Large) 16.sp else 14.sp
+    val textAlign = if (alignEnd) TextAlign.End else TextAlign.Start
+    val titleStyle = theme.typography.style(
+        titleSize,
+        theme.typography.fontWeightStrong,
+        theme.colors.text1,
+    ).copy(textAlign = textAlign)
+    val contentStyle = theme.typography.style(
+        theme.typography.fontSize.medium,
+        color = theme.colors.text2,
+    ).copy(textAlign = textAlign)
+    val timeStyle = theme.typography.style(12.sp, color = theme.colors.text3)
+        .copy(textAlign = textAlign)
+    Column(
+        modifier,
+        horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start,
+    ) {
+        if (item.title != null) {
+            BasicText(
+                text = item.title,
+                style = titleStyle,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
+        }
+        if (item.content != null) {
+            BasicText(text = item.content, style = contentStyle)
+        }
+        if (item.time != null) {
+            BasicText(
+                text = item.time,
+                style = timeStyle,
+                modifier = Modifier.padding(top = 6.dp),
+            )
         }
     }
 }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -67,10 +68,11 @@ fun NBackTop(
             enter = fadeIn() + scaleIn(initialScale = 0.8f),
             exit = fadeOut() + scaleOut(targetScale = 0.8f),
         ) {
+            val customContent = content
             Box(
                 Modifier
-                    .height(40.dp)
-                    .widthIn(min = 40.dp)
+                    .heightIn(min = 40.dp)
+                    .then(if (customContent == null) Modifier.widthIn(min = 40.dp) else Modifier)
                     .nShadow(theme, 1, shape)
                     .clip(shape)
                     .background(theme.colors.popover)
@@ -79,10 +81,15 @@ fun NBackTop(
                         scope.launch { scrollState.animateScrollTo(0) }
                         onClick()
                     }
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .then(
+                        if (customContent == null) {
+                            Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                        } else {
+                            Modifier
+                        },
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
-                val customContent = content
                 if (customContent != null) {
                     customContent()
                 } else {

@@ -79,6 +79,16 @@ enum class NColorPickerMode(val label: String) {
 enum class NColorPickerAction { Confirm, Clear }
 
 /**
+ * Data and actions exposed to a custom [NColorPicker] trigger.
+ *
+ * [onClick] toggles the picker panel, matching the slot API of naive-ui.
+ */
+class NColorPickerTriggerScope internal constructor(
+    val value: Color,
+    val onClick: () -> Unit,
+)
+
+/**
  * Color picker trigger with a popup panel containing a saturation/value
  * palette, hue and alpha sliders, mode tabs, an editable value field and
  * optional swatches.
@@ -103,6 +113,7 @@ fun NColorPicker(
     actions: List<NColorPickerAction>? = null,
     onConfirm: ((Color) -> Unit)? = null,
     onClear: (() -> Unit)? = null,
+    trigger: (@Composable NColorPickerTriggerScope.() -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
     var internalShow by remember { mutableStateOf(false) }
@@ -121,33 +132,43 @@ fun NColorPicker(
     val labelMode = modes.firstOrNull() ?: NColorPickerMode.Hex
 
     Box(modifier) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(height)
-                .alpha(if (disabled) theme.opacityDisabled else 1f)
-                .clip(shape)
-                .nBorder(
-                    color = if (!disabled && hovered) theme.colors.primaryHover else theme.colors.border,
-                    width = 1.dp,
-                    radius = theme.borderRadius,
-                )
-                .hoverable(interaction, enabled = !disabled)
-                .nClickable(interaction, enabled = !disabled) { updateShow(!mergedShow) },
-        ) {
-            Box(Modifier.matchParentSize().nCheckerboard())
-            Box(Modifier.matchParentSize().background(value))
-            Row(
-                Modifier.matchParentSize().padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        val triggerScope = NColorPickerTriggerScope(value) {
+            if (!disabled) updateShow(!mergedShow)
+        }
+        val customTrigger = trigger
+        if (customTrigger != null) {
+            Box(Modifier.alpha(if (disabled) theme.opacityDisabled else 1f)) {
+                customTrigger.invoke(triggerScope)
+            }
+        } else {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(height)
+                    .alpha(if (disabled) theme.opacityDisabled else 1f)
+                    .clip(shape)
+                    .nBorder(
+                        color = if (!disabled && hovered) theme.colors.primaryHover else theme.colors.border,
+                        width = 1.dp,
+                        radius = theme.borderRadius,
+                    )
+                    .hoverable(interaction, enabled = !disabled)
+                    .nClickable(interaction, enabled = !disabled) { updateShow(!mergedShow) },
             ) {
-                NText(
-                    text = formatColor(value, labelMode, showAlpha),
-                    modifier = Modifier.fillMaxWidth(),
-                    size = fontSize,
-                    color = readableOn(value),
-                    maxLines = 1,
-                )
+                Box(Modifier.matchParentSize().nCheckerboard())
+                Box(Modifier.matchParentSize().background(value))
+                Row(
+                    Modifier.matchParentSize().padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    NText(
+                        text = formatColor(value, labelMode, showAlpha),
+                        modifier = Modifier.fillMaxWidth(),
+                        size = fontSize,
+                        color = readableOn(value),
+                        maxLines = 1,
+                    )
+                }
             }
         }
 

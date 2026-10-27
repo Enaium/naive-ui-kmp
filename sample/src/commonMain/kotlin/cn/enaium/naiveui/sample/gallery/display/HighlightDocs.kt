@@ -1,6 +1,7 @@
 package cn.enaium.naiveui.sample.gallery.display
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 import cn.enaium.naiveui.components.NHighlight
 import cn.enaium.naiveui.components.NHighlightPattern
@@ -61,6 +62,20 @@ fun HighlightDocs() {
                     NHighlightPattern("TypeScript", color = theme.colors.info),
                 ),
                 highlightBackground = theme.colors.primary.copy(alpha = 0.12f),
+            )
+        }
+        DemoSection(
+            title = "Component",
+            description = "Patterns can combine a text color and a bold weight without any mark background.",
+            code = "NHighlight(text, listOf(NHighlightPattern(\"Naive UI\", color = primary, bold = true)))",
+        ) {
+            NHighlight(
+                text = CaseText,
+                patterns = listOf(
+                    NHighlightPattern("Naive UI", color = theme.colors.primary, bold = true),
+                    NHighlightPattern("TypeScript", color = theme.colors.error),
+                ),
+                highlightBackground = Color.Transparent,
             )
         }
         DemoSection(

@@ -66,25 +66,48 @@ NDescriptions(bordered = true, labelPlacement = NDescriptionsLabelPlacement.Left
         }
 
         DemoSection(
-            title = "Columns and span",
-            description = "Change column to control items per row. An item can span multiple columns, including the full row.",
+            title = "Columns",
+            description = "Set column to control how many items fit in each row. Items that do not fit wrap to a new row.",
             code = """
-NDescriptions(column = 4, bordered = true) {
-    NDescriptionsItem(label = "One") { NText("1") }
-    NDescriptionsItem(label = "Two", span = 2) { NText("2") }
-    NDescriptionsItem(label = "Three") { NText("3") }
+NDescriptions(column = 4) {
+    NDescriptionsItem(label = "Breakfast") { NText("Apple") }
+    NDescriptionsItem(label = "Brunch") { NText("Apple") }
+    NDescriptionsItem(label = "Lunch") { NText("Apple") }
+    NDescriptionsItem(label = "Supper") { NText("Apple") }
+    NDescriptionsItem(label = "Midnight Snack") { NText("Apple") }
 }
 """,
         ) {
-            NDescriptions(column = 4, bordered = true) {
+            NDescriptions(column = 4) {
+                NDescriptionsItem(label = "Breakfast") { NText("Apple") }
+                NDescriptionsItem(label = "Brunch") { NText("Apple") }
+                NDescriptionsItem(label = "Lunch") { NText("Apple") }
+                NDescriptionsItem(label = "Supper") { NText("Apple") }
+                NDescriptionsItem(label = "Midnight Snack") { NText("Apple") }
+            }
+        }
+
+        DemoSection(
+            title = "Span",
+            description = "Each item accepts a span so it can occupy several columns, including the whole row.",
+            code = """
+NDescriptions(column = 6, bordered = true) {
+    NDescriptionsItem(label = "Breakfast") { NText("Apple") }
+    NDescriptionsItem(label = "Apple", span = 2) { NText("Apple") }
+    NDescriptionsItem(label = "Apple", span = 3) { NText("Apple") }
+}
+""",
+        ) {
+            NDescriptions(column = 6, bordered = true) {
                 NDescriptionsItem(label = "Breakfast") { NText("Apple") }
                 NDescriptionsItem(label = "Brunch") { NText("Apple") }
                 NDescriptionsItem(label = "Lunch") { NText("Apple") }
                 NDescriptionsItem(label = "Supper") { NText("Apple") }
                 NDescriptionsItem(label = "Dinner") { NText("Apple") }
                 NDescriptionsItem(label = "Midnight Snack") { NText("Apple") }
-                NDescriptionsItem(label = "Spans two", span = 2) { NText("Apple") }
-                NDescriptionsItem(label = "Spans three", span = 3) { NText("Apple") }
+                NDescriptionsItem(label = "Apple") { NText("Apple") }
+                NDescriptionsItem(label = "Apple", span = 2) { NText("Apple") }
+                NDescriptionsItem(label = "Apple", span = 3) { NText("Apple") }
             }
         }
 

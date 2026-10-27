@@ -215,6 +215,8 @@ fun NTable(
     striped: Boolean = false,
     bordered: Boolean = true,
     singleLine: Boolean = true,
+    singleColumn: Boolean = false,
+    bottomBordered: Boolean = true,
     size: NSize? = null,
     loading: Boolean = false,
     pagination: NTablePagination? = null,
@@ -438,7 +440,15 @@ fun NTable(
                                 .then(if (scrolled) Modifier.horizontalScroll(horizontalState) else Modifier)
                                 .background(background)
                                 .then(
-                                    if (!(bordered && index == rows.lastIndex)) {
+                                    if (
+                                        if (singleColumn) {
+                                            index == rows.lastIndex && !bordered && bottomBordered
+                                        } else if (index < rows.lastIndex) {
+                                            true
+                                        } else {
+                                            !bordered && bottomBordered
+                                        }
+                                    ) {
                                         Modifier.nBottomBorder(colors.divider)
                                     } else {
                                         Modifier

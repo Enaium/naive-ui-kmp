@@ -101,7 +101,7 @@ fun AlertDocs() {
             }
         }
         DemoSection(
-            title = "Custom icon",
+            title = "Icon",
             description = "The icon slot replaces the built-in status icon.",
         ) {
             NAlert(

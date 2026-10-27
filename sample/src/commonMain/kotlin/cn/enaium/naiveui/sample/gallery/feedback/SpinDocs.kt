@@ -72,19 +72,23 @@ fun SpinDocs() {
             title = "Customize icon",
             description = "Supply an icon through the icon slot; it rotates while spinning.",
         ) {
-            NSpin(
-                show = true,
-                icon = {
-                    NIcon(
-                        NIcons.RotateClockwise,
-                        size = 30.dp,
-                        color = theme.colors.primary,
-                    )
-                },
-            ) {
-                NAlert(title = "Custom icon", type = NAlertType.Info) {
-                    NText("The icon rotates while the spin is active.")
+            var show by remember { mutableStateOf(false) }
+            NSpace(vertical = true, size = 12.dp) {
+                NSpin(
+                    show = show,
+                    icon = {
+                        NIcon(
+                            NIcons.RotateClockwise,
+                            size = 30.dp,
+                            color = theme.colors.primary,
+                        )
+                    },
+                ) {
+                    NAlert(title = "Custom icon", type = NAlertType.Info) {
+                        NText("The icon rotates while the spin is active.")
+                    }
                 }
+                NButton(onClick = { show = !show }) { NText("Click to Spin") }
             }
         }
         DemoSection(

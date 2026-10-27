@@ -56,6 +56,7 @@ fun NBadge(
     offset: DpOffset = DpOffset.Zero,
     show: Boolean = true,
     inline: Boolean = false,
+    valueContent: (@Composable () -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit = {},
 ) {
     val theme = LocalNTheme.current
@@ -73,6 +74,7 @@ fun NBadge(
     val hasValue = value != null && value.toString().isNotEmpty()
     val visible = show && (
         dot ||
+            valueContent != null ||
             (hasValue && !(!showZero && numericValue != null && numericValue <= 0.0))
         )
 
@@ -99,17 +101,21 @@ fun NBadge(
                     .padding(horizontal = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                NBaseText(
-                    text = formatBadgeValue(value, max),
-                    style = TextStyle(
-                        fontFamily = theme.typography.fontFamily,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp,
-                        color = Color.White,
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip,
-                )
+                if (valueContent != null) {
+                    valueContent()
+                } else {
+                    NBaseText(
+                        text = formatBadgeValue(value, max),
+                        style = TextStyle(
+                            fontFamily = theme.typography.fontFamily,
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp,
+                            color = Color.White,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip,
+                    )
+                }
             }
         }
     }

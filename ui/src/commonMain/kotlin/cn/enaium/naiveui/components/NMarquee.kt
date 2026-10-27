@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
@@ -44,6 +45,7 @@ fun NMarquee(
     direction: NMarqueeDirection = NMarqueeDirection.Normal,
     speed: Float = 100f,
     duration: Long? = null,
+    autoFill: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     var extentPx by remember { mutableStateOf(0) }
@@ -69,15 +71,32 @@ fun NMarquee(
         -extentPx * (1f - progress)
     }
 
-    Box(modifier.clipToBounds()) {
+    BoxWithConstraints(modifier.clipToBounds()) {
+        val containerExtent = if (vertical) {
+            if (constraints.hasBoundedHeight) constraints.maxHeight else 0
+        } else {
+            if (constraints.hasBoundedWidth) constraints.maxWidth else 0
+        }
+        val copyCount = if (autoFill && extentPx > 0 && containerExtent > extentPx) {
+            ((containerExtent + extentPx - 1) / extentPx + 1).coerceAtMost(64)
+        } else {
+            2
+        }
         Layout(
             content = {
-                Box(Modifier.onSizeChanged {
-                    extentPx = if (vertical) it.height else it.width
-                }) {
-                    content()
+                repeat(copyCount) { index ->
+                    Box(
+                        if (index == 0) {
+                            Modifier.onSizeChanged {
+                                extentPx = if (vertical) it.height else it.width
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ) {
+                        content()
+                    }
                 }
-                Box { content() }
             },
             modifier = Modifier.graphicsLayer {
                 translationX = if (vertical) 0f else translation
@@ -119,6 +138,7 @@ fun NMarquee(
     direction: NMarqueeDirection = NMarqueeDirection.Normal,
     speed: Float = 100f,
     duration: Long? = null,
+    autoFill: Boolean = false,
     itemSpacing: Dp = 24.dp,
 ) {
     val theme = LocalNTheme.current
@@ -128,6 +148,7 @@ fun NMarquee(
         direction = direction,
         speed = speed,
         duration = duration,
+        autoFill = autoFill,
     ) {
         if (vertical) {
             Column(verticalArrangement = Arrangement.spacedBy(itemSpacing)) {

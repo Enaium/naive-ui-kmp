@@ -14,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -83,6 +84,7 @@ fun NRate(
     disabled: Boolean = false,
     clearable: Boolean = false,
     onHoverValueChange: ((Float?) -> Unit)? = null,
+    icon: (@Composable (index: Int, active: Boolean) -> Unit)? = null,
 ) {
     NRateCore(
         value = value.toFloat(),
@@ -96,6 +98,7 @@ fun NRate(
         disabled = disabled,
         clearable = clearable,
         onHoverValueChange = onHoverValueChange,
+        icon = icon,
     )
 }
 
@@ -116,6 +119,7 @@ fun NRatePrecise(
     disabled: Boolean = false,
     clearable: Boolean = false,
     onHoverValueChange: ((Float?) -> Unit)? = null,
+    icon: (@Composable (index: Int, active: Boolean) -> Unit)? = null,
 ) {
     NRateCore(
         value = value,
@@ -129,6 +133,7 @@ fun NRatePrecise(
         disabled = disabled,
         clearable = clearable,
         onHoverValueChange = onHoverValueChange,
+        icon = icon,
     )
 }
 
@@ -145,6 +150,7 @@ private fun NRateCore(
     disabled: Boolean,
     clearable: Boolean,
     onHoverValueChange: ((Float?) -> Unit)?,
+    icon: (@Composable (index: Int, active: Boolean) -> Unit)?,
 ) {
     val theme = LocalNTheme.current
     val colors = theme.colors
@@ -258,15 +264,20 @@ private fun NRateCore(
                         scaleX = scale
                         scaleY = scale
                     },
+                contentAlignment = Alignment.Center,
             ) {
-                Canvas(Modifier.size(star)) {
-                    val amount = (displayValue - index).coerceIn(0f, 1f)
-                    val path = starPathCache
-                    drawStar(path, inactiveColor)
-                    when {
-                        amount >= 0.999f -> drawStar(path, activeColor)
-                        amount >= 0.5f -> clipRect(0f, 0f, this.size.width / 2f, this.size.height) {
-                            drawStar(path, activeColor)
+                val amount = (displayValue - index).coerceIn(0f, 1f)
+                if (icon != null) {
+                    icon(index, amount >= 0.5f)
+                } else {
+                    Canvas(Modifier.size(star)) {
+                        val path = starPathCache
+                        drawStar(path, inactiveColor)
+                        when {
+                            amount >= 0.999f -> drawStar(path, activeColor)
+                            amount >= 0.5f -> clipRect(0f, 0f, this.size.width / 2f, this.size.height) {
+                                drawStar(path, activeColor)
+                            }
                         }
                     }
                 }

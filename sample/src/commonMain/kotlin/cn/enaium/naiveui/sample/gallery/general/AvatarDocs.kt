@@ -2,27 +2,36 @@ package cn.enaium.naiveui.sample.gallery.general
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.components.NAvatar
 import cn.enaium.naiveui.components.NAvatarGroup
 import cn.enaium.naiveui.components.NAvatarOption
-import cn.enaium.naiveui.components.NButton
-import cn.enaium.naiveui.components.NText
-import cn.enaium.naiveui.components.NAlign
-import cn.enaium.naiveui.components.NSpace
 import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.icons.NIcons
+import cn.enaium.naiveui.components.NBadge
+import cn.enaium.naiveui.components.NBadgeType
+import cn.enaium.naiveui.components.NButton
+import cn.enaium.naiveui.components.NAlign
+import cn.enaium.naiveui.components.NSpace
+import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.sample.gallery.DemoSection
 import cn.enaium.naiveui.sample.gallery.DocsPage
 
 private const val AVATAR_URL = "https://07akioni.oss-cn-beijing.aliyuncs.com/07akioni.jpeg"
+
+private val lazySources = (1..10).map { "https://picsum.photos/id/$it/100/100" }
 
 @Composable
 fun AvatarDocs() {
@@ -32,9 +41,9 @@ fun AvatarDocs() {
     ) {
         DemoSection(
             title = "Basic",
-            description = "An avatar shows a remote image, text initials or fallback content.",
+            description = "Pass an image URL through `src`; text and the fallback slot are shown while loading or on error.",
         ) {
-            NAvatar(text = "NA")
+            NAvatar(size = 40.dp, src = AVATAR_URL, text = "07")
         }
 
         DemoSection(
@@ -42,10 +51,10 @@ fun AvatarDocs() {
             description = "Avatars support small, medium and large sizes, plus arbitrary custom sizes in dp.",
         ) {
             NSpace(size = 12.dp, align = NAlign.End) {
-                NAvatar(size = 24.dp, text = "S")
-                NAvatar(size = 34.dp, text = "M")
-                NAvatar(size = 40.dp, text = "L")
-                NAvatar(size = 48.dp, text = "XL")
+                NAvatar(size = 24.dp, src = AVATAR_URL, text = "S")
+                NAvatar(size = 34.dp, src = AVATAR_URL, text = "M")
+                NAvatar(size = 40.dp, src = AVATAR_URL, text = "L")
+                NAvatar(size = 48.dp, src = AVATAR_URL, text = "XL")
             }
         }
 
@@ -54,20 +63,58 @@ fun AvatarDocs() {
             description = "Set `round` for a circular avatar; the default shape follows the theme radius.",
         ) {
             NSpace(size = 12.dp, align = NAlign.End) {
-                NAvatar(size = 40.dp, text = "R", round = false)
-                NAvatar(size = 40.dp, text = "R", round = true)
+                NAvatar(size = 40.dp, src = AVATAR_URL, text = "R", round = false)
+                NAvatar(size = 40.dp, src = AVATAR_URL, text = "R", round = true)
             }
         }
 
         DemoSection(
-            title = "Text",
-            description = "Text is resized to fit the avatar. Click the button to change the name shown.",
+            title = "Color",
+            description = "Set a background color to distinguish people or things.",
+        ) {
+            NSpace(size = 12.dp) {
+                NAvatar(size = 40.dp, text = "M", color = Color(0xFFE74C3C))
+                NAvatar(size = 40.dp, text = "A", color = Color(0xFF3498DB), round = true)
+                NAvatar(size = 40.dp, text = "T", color = Color(0xFF2ECC71))
+            }
+        }
+
+        DemoSection(
+            title = "Badge",
+            description = "Wrap an avatar with `NBadge` to show a count or status dot.",
+        ) {
+            NSpace(size = 20.dp, align = NAlign.Center) {
+                NBadge(value = "999+") { NAvatar(text = "App") }
+                NBadge(dot = true, type = NBadgeType.Success) {
+                    NAvatar(text = "App")
+                }
+            }
+        }
+
+        DemoSection(
+            title = "Icon",
+            description = "Use the content slot for an icon avatar.",
+        ) {
+            NSpace(size = 12.dp) {
+                NAvatar(size = 40.dp) {
+                    NIcon(NIcons.Person, size = 24.dp)
+                }
+                NAvatar(size = 40.dp, round = true) {
+                    NIcon(NIcons.Person, size = 24.dp, color = Color(0xFF8A2BE2))
+                }
+            }
+        }
+
+        DemoSection(
+            title = "Name size",
+            description = "Text is scaled to fit the avatar. Change the name and compare both shapes.",
         ) {
             var name by remember { mutableStateOf("Oasis") }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 NSpace(size = 12.dp, align = NAlign.Center) {
-                    NAvatar(size = 40.dp, text = name)
-                    NAvatar(size = 40.dp, text = name, round = true)
+                    NAvatar(size = 34.dp, text = name)
+                    NAvatar(size = 34.dp, text = name, round = true)
+                    NAvatar(size = 48.dp, text = name)
                 }
                 NButton(
                     onClick = {
@@ -80,29 +127,6 @@ fun AvatarDocs() {
                 ) {
                     NText("Change name")
                 }
-            }
-        }
-
-        DemoSection(
-            title = "Icon",
-            description = "Use the content slot for an icon avatar.",
-        ) {
-            NAvatar(size = 40.dp) {
-                NIcon(NIcons.Person, size = 24.dp)
-            }
-            NAvatar(size = 40.dp, round = true) {
-                NIcon(NIcons.Person, size = 24.dp, color = Color(0xFF8A2BE2))
-            }
-        }
-
-        DemoSection(
-            title = "Color",
-            description = "Set a background color to distinguish people or things.",
-        ) {
-            NSpace(size = 12.dp) {
-                NAvatar(size = 40.dp, text = "M", color = Color(0xFFE74C3C))
-                NAvatar(size = 40.dp, text = "A", color = Color(0xFF3498DB), round = true)
-                NAvatar(size = 40.dp, text = "T", color = Color(0xFF2ECC71))
             }
         }
 
@@ -143,17 +167,45 @@ fun AvatarDocs() {
         }
 
         DemoSection(
-            title = "Remote image",
-            description = "Pass `src` to load an image. Text and fallback are used while loading or on error.",
+            title = "Lazy load",
+            description = "A `LazyColumn` only composes the avatars currently on screen, so their images load as they " +
+                "enter the viewport. Scroll the list to load more.",
         ) {
-            NSpace(size = 12.dp, align = NAlign.Center) {
-                NAvatar(size = 44.dp, src = AVATAR_URL, text = "07", round = true)
-                NAvatar(
-                    size = 44.dp,
-                    src = AVATAR_URL,
-                    text = "07",
-                    contentScale = ContentScale.Crop,
-                )
+            LazyColumn(
+                Modifier.fillMaxWidth().height(140.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(lazySources) { source ->
+                    NAvatar(size = 40.dp, src = source, text = "P", round = true)
+                }
+            }
+        }
+
+        DemoSection(
+            title = "v-show debug",
+            description = "Toggle both avatars. Compose has no `v-show`; conditional composition is the equivalent of " +
+                "`v-if`, while `Modifier.alpha(0f)` matches a hidden but composed `v-show` node.",
+        ) {
+            var visible by remember { mutableStateOf(false) }
+            var composed by remember { mutableStateOf(true) }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                NSpace(size = 12.dp, align = NAlign.Center) {
+                    NButton(onClick = {
+                        visible = !visible
+                        composed = !composed
+                    }) {
+                        NText("Toggle")
+                    }
+                    if (visible) {
+                        NAvatar(size = 40.dp, text = "Oasis111")
+                    }
+                    if (composed) {
+                        NAvatar(size = 40.dp, text = "Oasis111", round = true)
+                    } else {
+                        NAvatar(size = 40.dp, text = "Oasis111", round = true, modifier = Modifier.alpha(0f))
+                    }
+                }
+                NText("Composed opacity variant: ${if (composed) "visible" else "hidden"}")
             }
         }
     }

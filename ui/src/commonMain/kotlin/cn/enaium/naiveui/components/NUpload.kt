@@ -155,12 +155,18 @@ fun NUpload(
     onSelectFiles: (List<NUploadFile>) -> Unit = {},
     onRemove: (NUploadFile) -> Boolean = { true },
     onPreview: (NUploadFile) -> Unit = {},
+    showDownloadButton: Boolean = false,
+    onDownload: ((NUploadFile) -> Unit)? = null,
+    customDownload: ((NUploadFile) -> Unit)? = null,
+    onFinish: ((NUploadFile) -> NUploadFile)? = null,
+    createThumbnailUrl: ((NUploadFile) -> String?)? = null,
     multiple: Boolean = false,
     max: Int? = null,
     accept: String? = null,
     disabled: Boolean = false,
     directory: Boolean = false,
     showFileList: Boolean = true,
+    abstract: Boolean = false,
     listType: NUploadListType = NUploadListType.Text,
     draggable: Boolean = false,
     defaultUpload: Boolean = true,
@@ -204,6 +210,7 @@ fun NUpload(
         val source = internalList.firstOrNull { it.id == id } ?: return
         val uploading = source.copy(status = NUploadStatus.Uploading, percentage = 0f)
         updateFile(id) { uploading }
+        val finishTransform = onFinish
         val request = NUploadRequest(
             file = uploading,
             onProgress = { percentage ->
@@ -218,13 +225,14 @@ fun NUpload(
             onFinish = { finished ->
                 updateFile(id) { file ->
                     if (file.status == NUploadStatus.Uploading) {
-                        file.copy(
+                        val uploaded = file.copy(
                             name = finished.name,
-                            status = NUploadStatus.Finished,
                             percentage = 100f,
                             url = finished.url ?: file.url,
                             type = finished.type ?: file.type,
                         )
+                        val transformed = finishTransform?.invoke(uploaded) ?: uploaded
+                        transformed.copy(status = NUploadStatus.Finished, percentage = 100f)
                     } else {
                         file
                     }
@@ -308,6 +316,11 @@ fun NUpload(
         mutate(internalList.filterNot { it.id == file.id })
     }
 
+    fun downloadFile(file: NUploadFile) {
+        onDownload?.invoke(file)
+        customDownload?.invoke(file)
+    }
+
     SideEffect {
         controller.addFilesAction = { files -> addFilesInternal(files) }
         controller.clearAction = { clearAll() }
@@ -329,7 +342,7 @@ fun NUpload(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (showTrigger) {
+                if (showTrigger && !abstract) {
                     val customTrigger = trigger
                     if (customTrigger != null) {
                         Box(
@@ -356,17 +369,20 @@ fun NUpload(
                         key(file.id) {
                             NUploadImageCard(
                                 file = file,
+                                thumbnailUrl = createThumbnailUrl?.invoke(file) ?: file.url,
                                 disabled = disabled,
+                                showDownloadButton = showDownloadButton,
                                 onRemove = { removeFile(file) },
                                 onRetry = { startUpload(file.id) },
                                 onPreview = { onPreview(file) },
+                                onDownload = { downloadFile(file) },
                             )
                         }
                     }
                 }
             }
         } else {
-            if (showTrigger) {
+            if (showTrigger && !abstract) {
                 val customTrigger = trigger
                 if (customTrigger != null) {
                     Box(Modifier.alpha(if (availableToAdd) 1f else theme.opacityDisabled)) {
@@ -388,11 +404,14 @@ fun NUpload(
                         key(file.id) {
                             NUploadTextRow(
                                 file = file,
+                                thumbnailUrl = createThumbnailUrl?.invoke(file) ?: file.url,
                                 listType = listType,
                                 disabled = disabled,
+                                showDownloadButton = showDownloadButton,
                                 onRemove = { removeFile(file) },
                                 onRetry = { startUpload(file.id) },
                                 onPreview = { onPreview(file) },
+                                onDownload = { downloadFile(file) },
                             )
                         }
                     }
@@ -486,11 +505,14 @@ private fun NUploadDefaultTrigger(
 @Composable
 private fun NUploadTextRow(
     file: NUploadFile,
+    thumbnailUrl: String?,
     listType: NUploadListType,
     disabled: Boolean,
+    showDownloadButton: Boolean,
     onRemove: () -> Unit,
     onRetry: () -> Unit,
     onPreview: () -> Unit,
+    onDownload: () -> Unit,
 ) {
     val theme = LocalNTheme.current
     val interaction = remember { MutableInteractionSource() }
@@ -526,9 +548,9 @@ private fun NUploadTextRow(
                     .background(theme.colors.action),
                 contentAlignment = Alignment.Center,
             ) {
-                if (file.url != null) {
+                if (thumbnailUrl != null) {
                     AsyncImage(
-                        model = file.url,
+                        model = thumbnailUrl,
                         contentDescription = file.name,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
@@ -573,6 +595,9 @@ private fun NUploadTextRow(
         if (hasUrl) {
             NUploadIconButton(NIcons.Eye, theme.colors.icon, "Preview", onPreview)
         }
+        if (showDownloadButton && file.status == NUploadStatus.Finished) {
+            NUploadIconButton(NIcons.Download, theme.colors.icon, "Download", onDownload)
+        }
         if (file.status == NUploadStatus.Failed) {
             NUploadIconButton(NIcons.Retry, theme.colors.error, "Retry", onRetry)
         }
@@ -585,10 +610,13 @@ private fun NUploadTextRow(
 @Composable
 private fun NUploadImageCard(
     file: NUploadFile,
+    thumbnailUrl: String?,
     disabled: Boolean,
+    showDownloadButton: Boolean,
     onRemove: () -> Unit,
     onRetry: () -> Unit,
     onPreview: () -> Unit,
+    onDownload: () -> Unit,
 ) {
     val theme = LocalNTheme.current
     val interaction = remember { MutableInteractionSource() }
@@ -607,9 +635,9 @@ private fun NUploadImageCard(
             .nBorder(borderColor, 1.dp, theme.borderRadius)
             .hoverable(interaction),
     ) {
-        if (file.url != null) {
+        if (thumbnailUrl != null) {
             AsyncImage(
-                model = file.url,
+                model = thumbnailUrl,
                 contentDescription = file.name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
@@ -660,6 +688,9 @@ private fun NUploadImageCard(
         ) {
             if (file.url != null) {
                 NUploadIconButton(NIcons.Eye, theme.colors.icon, "Preview", onPreview)
+            }
+            if (showDownloadButton && file.status == NUploadStatus.Finished) {
+                NUploadIconButton(NIcons.Download, theme.colors.icon, "Download", onDownload)
             }
             if (isError) {
                 NUploadIconButton(NIcons.Retry, theme.colors.error, "Retry", onRetry)

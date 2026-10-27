@@ -43,7 +43,7 @@ fun DividerDocs() {
         }
 
         DemoSection(
-            title = "Title placement",
+            title = "Content",
             description = "A divider can hold a title aligned to the left, center or right, and can be dashed.",
         ) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {

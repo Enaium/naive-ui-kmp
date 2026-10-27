@@ -8,10 +8,13 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,6 +34,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -40,6 +44,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -66,8 +71,10 @@ private fun defaultSliderFormat(value: Float): String {
  * Slider with custom drawn rail, handle and marks.
  *
  * Range mode is enabled by supplying [secondValue] together with
- * [onSecondValueChange]. Values snap to [step], or to the nearest mark when
- * [snapToMarks] is set.
+ * [onSecondValueChange]. Additional handles can be added through [extraValues]
+ * and [onExtraValuesChange]. Values snap to [step], or to the nearest mark when
+ * [snapToMarks] is set. [thumb] and [markContent] replace the default handle and
+ * mark label rendering.
  */
 @Composable
 fun NSlider(
@@ -90,6 +97,11 @@ fun NSlider(
     keyboard: Boolean = true,
     onDragStart: (() -> Unit)? = null,
     onDragEnd: (() -> Unit)? = null,
+    tooltip: Boolean = true,
+    thumb: (@Composable (value: Float) -> Unit)? = null,
+    markContent: (@Composable (value: Float, active: Boolean) -> Unit)? = null,
+    extraValues: List<Float> = emptyList(),
+    onExtraValuesChange: ((List<Float>) -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
     val colors = theme.colors
@@ -110,15 +122,20 @@ fun NSlider(
     val maxLabelWidthPx = remember(markLabels, theme) {
         markLabels.values.maxOfOrNull { measurer.measure(it, labelStyle).size.width } ?: 0
     }
-    val labelArea = with(density) { maxLabelWidthPx.toDp() }
+    val labelArea = if (markContent != null) 96.dp else with(density) { maxLabelWidthPx.toDp() }
     val marksArea = 22.dp
     val canvasWidth = if (vertical && markLabels.isNotEmpty()) handle + labelArea + 14.dp else handle
     val horizontalHeight = handle + if (markLabels.isNotEmpty()) marksArea else 0.dp
 
+    val handles = buildList {
+        add(value)
+        secondValue?.let { add(it) }
+        addAll(extraValues)
+    }
     val enabled = !disabled
-    val range = secondValue != null
-    val low = if (range) minOf(value, secondValue!!) else value
-    val high = if (range) maxOf(value, secondValue!!) else value
+    val range = handles.size > 1
+    val fillLow = if (range) (handles.minOrNull() ?: min) else min
+    val fillHigh = if (range) (handles.maxOrNull() ?: value) else value
 
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -129,8 +146,11 @@ fun NSlider(
 
     val currentValue by rememberUpdatedState(value)
     val currentSecond by rememberUpdatedState(secondValue)
+    val currentHandles by rememberUpdatedState(handles)
+    val currentExtras by rememberUpdatedState(extraValues)
     val latestOnValueChange by rememberUpdatedState(onValueChange)
     val latestOnSecondValueChange by rememberUpdatedState(onSecondValueChange)
+    val latestOnExtraValuesChange by rememberUpdatedState(onExtraValuesChange)
     val latestOnDragStart by rememberUpdatedState(onDragStart)
     val latestOnDragEnd by rememberUpdatedState(onDragEnd)
     val latestFormatter by rememberUpdatedState(tooltipFormatter)
@@ -169,18 +189,26 @@ fun NSlider(
 
     fun commit(target: Int, raw: Float) {
         val snapped = snap(raw)
-        if (target == 0) {
-            if (snapped != currentValue) latestOnValueChange(snapped)
-        } else {
-            val upper = currentSecond ?: return
-            if (snapped != upper) latestOnSecondValueChange?.invoke(snapped)
+        when (target) {
+            0 -> if (snapped != currentValue) latestOnValueChange(snapped)
+            1 -> {
+                val upper = currentSecond ?: return
+                if (snapped != upper) latestOnSecondValueChange?.invoke(snapped)
+            }
+            else -> {
+                val extras = currentExtras
+                val index = target - 2
+                if (index in extras.indices && snapped != extras[index]) {
+                    val next = extras.toMutableList()
+                    next[index] = snapped
+                    latestOnExtraValuesChange?.invoke(next)
+                }
+            }
         }
     }
 
-    fun pickHandle(v: Float): Int {
-        val second = currentSecond ?: return 0
-        return if (abs(v - currentValue) <= abs(v - second)) 0 else 1
-    }
+    fun pickHandle(v: Float): Int =
+        currentHandles.indices.minByOrNull { abs(v - currentHandles[it]) } ?: 0
 
     val gestureKeys = listOf(min, max, step, vertical, reverse, snapToMarks, marks, disabled)
 
@@ -229,11 +257,8 @@ fun NSlider(
                 else -> null
             }
             if (delta != null) {
-                if (draggedHandle == 0 || currentSecond == null) {
-                    commit(0, currentValue + delta)
-                } else {
-                    commit(1, currentSecond!! + delta)
-                }
+                val current = currentHandles.getOrNull(draggedHandle) ?: currentValue
+                commit(draggedHandle, current + delta)
                 true
             } else {
                 when (event.key) {
@@ -253,23 +278,27 @@ fun NSlider(
         Modifier
     }
 
-    val canvasModifier = (if (vertical) {
+    val sizeModifier = if (vertical) {
         Modifier.fillMaxHeight().heightIn(min = 120.dp).width(canvasWidth)
     } else {
         Modifier.fillMaxWidth().height(horizontalHeight)
-    })
-        .onSizeChanged { canvasSize = it }
-        .semantics {
-            if (!range) {
-                progressBarRangeInfo = ProgressBarRangeInfo(value, min..max)
-            }
-        }
-        .then(keyboardModifier)
-        .focusable(interactionSource = interaction, enabled = enabled)
-        .hoverable(interaction)
-        .then(pointerModifiers)
+    }
 
-    Canvas(modifier.then(canvasModifier)) {
+    Box(modifier.then(sizeModifier)) {
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                .onSizeChanged { canvasSize = it }
+                .semantics {
+                    if (!range) {
+                        progressBarRangeInfo = ProgressBarRangeInfo(value, min..max)
+                    }
+                }
+                .then(keyboardModifier)
+                .focusable(interactionSource = interaction, enabled = enabled)
+                .hoverable(interaction)
+                .then(pointerModifiers),
+        ) {
         val width = this.size.width
         val height = this.size.height
         val alpha = if (disabled) theme.opacityDisabled else 1f
@@ -306,8 +335,8 @@ fun NSlider(
         }
 
         // Fill.
-        val lowPos = positionFor(low)
-        val highPos = positionFor(high)
+        val lowPos = positionFor(fillLow)
+        val highPos = positionFor(fillHigh)
         val fillStart = minOf(lowPos, highPos)
         val fillEnd = maxOf(lowPos, highPos)
         if (fillEnd > fillStart) {
@@ -331,30 +360,32 @@ fun NSlider(
         // Marks.
         if (markLabels.isNotEmpty()) {
             markLabels.forEach { (markValue, label) ->
-                val active = markValue in low..high
+                val active = markValue in fillLow..fillHigh
                 val pos = positionFor(markValue)
                 val dotColor = if (active) fillColor else colors.card
                 val dotBorder = if (active) fillColor else railColor
                 val center = if (vertical) Offset(trackCenter, pos) else Offset(pos, centerY)
                 drawCircle(dotColor, radius = 4.dp.toPx(), center = center)
                 drawCircle(dotBorder, radius = 4.dp.toPx(), center = center, style = Stroke(2.dp.toPx()))
-                val layout = measurer.measure(label, if (active) markActiveStyle else labelStyle)
-                if (vertical) {
-                    drawText(
-                        layout,
-                        topLeft = Offset(
-                            trackCenter + handlePx / 2f + 6.dp.toPx(),
-                            pos - layout.size.height / 2f,
-                        ),
-                    )
-                } else {
-                    drawText(
-                        layout,
-                        topLeft = Offset(
-                            pos - layout.size.width / 2f,
-                            handlePx + 2.dp.toPx(),
-                        ),
-                    )
+                if (markContent == null) {
+                    val layout = measurer.measure(label, if (active) markActiveStyle else labelStyle)
+                    if (vertical) {
+                        drawText(
+                            layout,
+                            topLeft = Offset(
+                                trackCenter + handlePx / 2f + 6.dp.toPx(),
+                                pos - layout.size.height / 2f,
+                            ),
+                        )
+                    } else {
+                        drawText(
+                            layout,
+                            topLeft = Offset(
+                                pos - layout.size.width / 2f,
+                                handlePx + 2.dp.toPx(),
+                            ),
+                        )
+                    }
                 }
             }
         }
@@ -385,13 +416,16 @@ fun NSlider(
                 center = center,
             )
         }
-        drawHandle(value, draggedHandle == 0 || !range)
-        secondValue?.let { drawHandle(it, draggedHandle == 1) }
+        if (thumb == null) {
+            handles.forEachIndexed { index, handleValue ->
+                drawHandle(handleValue, index == draggedHandle)
+            }
+        }
 
         // Tooltip.
         val tooltipValue: Float? = when {
-            range -> if (dragging) (if (draggedHandle == 0) value else secondValue) else null
-            showTooltip || dragging || (hovered && enabled) -> value
+            range -> if (dragging && tooltip) currentHandles.getOrNull(draggedHandle) else null
+            showTooltip || ((dragging || hovered) && tooltip && enabled) -> value
             else -> null
         }
         if (tooltipValue != null) {
@@ -419,6 +453,94 @@ fun NSlider(
                 layout,
                 topLeft = Offset(left + paddingX, top + paddingY),
             )
+        }
+        }
+
+        if (markContent != null && markLabels.isNotEmpty()) {
+            NSliderMarkOverlay(
+                marks = markLabels,
+                low = fillLow,
+                high = fillHigh,
+                min = min,
+                max = max,
+                reverse = reverse,
+                vertical = vertical,
+                handlePx = handlePx,
+                topPx = handlePx,
+                content = markContent,
+            )
+        }
+
+        if (thumb != null && canvasSize.width > 0) {
+            val widthPx = canvasSize.width.toFloat()
+            val heightPx = canvasSize.height.toFloat()
+            fun thumbOffsetPx(v: Float): Offset {
+                val fraction = fractionOf(v)
+                return if (vertical) {
+                    Offset(handlePx / 2f, heightPx - handlePx / 2f - fraction * (heightPx - handlePx))
+                } else {
+                    Offset(handlePx / 2f + fraction * (widthPx - handlePx), handlePx / 2f)
+                }
+            }
+            handles.forEach { handleValue ->
+                val point = thumbOffsetPx(handleValue)
+                Box(
+                    Modifier.offset(
+                        x = with(density) { (point.x - handlePx / 2f).toDp() },
+                        y = with(density) { (point.y - handlePx / 2f).toDp() },
+                    ),
+                ) {
+                    thumb(handleValue)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NSliderMarkOverlay(
+    marks: Map<Float, String>,
+    low: Float,
+    high: Float,
+    min: Float,
+    max: Float,
+    reverse: Boolean,
+    vertical: Boolean,
+    handlePx: Float,
+    topPx: Float,
+    content: @Composable (value: Float, active: Boolean) -> Unit,
+) {
+    val values = remember(marks) { marks.keys.toList() }
+    Layout(
+        content = {
+            values.forEach { markValue ->
+                content(markValue, markValue in low..high)
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+    ) { measurables, constraints ->
+        val width = constraints.maxWidth.toFloat()
+        val height = constraints.maxHeight.toFloat()
+        val placeables = measurables.map { it.measure(Constraints()) }
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            values.forEachIndexed { index, markValue ->
+                val placeable = placeables[index]
+                val raw = if (max > min) ((markValue - min) / (max - min)).coerceIn(0f, 1f) else 0f
+                val fraction = if (reverse) 1f - raw else raw
+                if (vertical) {
+                    val y = height - handlePx / 2f - fraction * (height - handlePx)
+                    placeable.place(
+                        handlePx.roundToInt() + 6.dp.roundToPx(),
+                        (y - placeable.height / 2f).roundToInt(),
+                    )
+                } else {
+                    val x = handlePx / 2f + fraction * (width - handlePx)
+                    placeable.place(
+                        (x - placeable.width / 2f).roundToInt(),
+                        topPx.roundToInt(),
+                    )
+                }
+            }
         }
     }
 }

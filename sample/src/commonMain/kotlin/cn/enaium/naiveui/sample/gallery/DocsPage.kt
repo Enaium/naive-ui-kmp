@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -52,12 +53,42 @@ fun DocsPage(
             Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 22.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            NText(
-                localizedDocsTitle(title, LocalNLocale.current),
-                size = 30.sp,
-                strong = true,
-                color = colors.text1,
-            )
+            val locale = LocalNLocale.current
+            val sourcePath = componentSourcePath(title)
+            val uriHandler = LocalUriHandler.current
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NText(
+                    localizedDocsTitle(title, locale),
+                    modifier = Modifier.weight(1f),
+                    size = 30.sp,
+                    strong = true,
+                    color = colors.text1,
+                )
+                if (sourcePath != null) {
+                    val sourceLabel = if (locale.name.startsWith("zh")) "查看示例源码" else "View sample source"
+                    BasicText(
+                        text = sourceLabel,
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .clip(RoundedCornerShape(theme.borderRadiusSmall))
+                            .background(colors.buttonColor2)
+                            .clickable {
+                                uriHandler.openUri(
+                                    "https://github.com/enaium/naive-ui-kmp/blob/main/$sourcePath",
+                                )
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        style = theme.typography.style(
+                            13.sp,
+                            FontWeight.Medium,
+                            colors.primary,
+                        ),
+                    )
+                }
+            }
             NText(description, color = colors.text3, size = theme.typography.fontSize.medium)
             NDivider()
             content()

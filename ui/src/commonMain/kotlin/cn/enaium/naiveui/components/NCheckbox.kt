@@ -27,6 +27,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -79,6 +81,10 @@ fun NCheckbox(
     label: String? = null,
     content: (@Composable () -> Unit)? = null,
     value: Any? = null,
+    checkedValue: Any = true,
+    uncheckedValue: Any = false,
+    onValueChange: ((Any) -> Unit)? = null,
+    focusRequester: FocusRequester? = null,
 ) {
     val theme = LocalNTheme.current
     val colors = theme.colors
@@ -112,6 +118,7 @@ fun NCheckbox(
 
     Row(
         modifier
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .hoverable(interaction, enabled = !disabledState)
             .toggleable(
                 value = checkedState,
@@ -123,7 +130,9 @@ fun NCheckbox(
                 if (inGroup) {
                     group!!.toggle(value as Any, !checkedState)
                 } else {
-                    onCheckedChange?.invoke(!checkedState)
+                    val next = !checkedState
+                    onValueChange?.invoke(if (next) checkedValue else uncheckedValue)
+                    onCheckedChange?.invoke(next)
                 }
             },
         verticalAlignment = Alignment.CenterVertically,

@@ -1,6 +1,7 @@
 package cn.enaium.naiveui.sample.gallery.config
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.components.NButton
 import cn.enaium.naiveui.components.NButtonType
 import cn.enaium.naiveui.components.NCard
+import cn.enaium.naiveui.components.NPopover
 import cn.enaium.naiveui.components.NTag
 import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.sample.gallery.DemoRow
@@ -140,6 +142,145 @@ fun ConfigProviderDocs() {
                     locale = NLocale.English,
                     size = size,
                 )
+            }
+        }
+
+        DemoSection(
+            title = "Inherit theme",
+            description = "A nested provider can inherit the parent theme by passing LocalNTheme.current; " +
+                "passing an explicit theme resets it.",
+        ) {
+            var inherit by remember { mutableStateOf(true) }
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                DemoRow {
+                    NButton(onClick = { inherit = true }) { NText("Inherit parent") }
+                    NButton(onClick = { inherit = false }) { NText("Explicit light") }
+                }
+                NConfigProvider(theme = NTheme.Dark) {
+                    val parentTheme = LocalNTheme.current
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(parentTheme.borderRadius))
+                            .background(parentTheme.colors.body)
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        NText("Parent provider is dark.", color = parentTheme.colors.text2)
+                        NConfigProvider(theme = if (inherit) parentTheme else NTheme.Light) {
+                            val nested = LocalNTheme.current
+                            NText(
+                                if (nested.isDark) "Nested provider is dark" else "Nested provider is light",
+                                color = nested.colors.text1,
+                                strong = true,
+                            )
+                            NTag(
+                                text = if (inherit) "Inherited from parent" else "Explicit light theme",
+                                type = NStatus.Primary,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        DemoSection(
+            title = "Disable inline theme",
+            description = "inlineThemeDisabled is accepted for API parity. Compose has no inline CSS, so " +
+                "theme overrides keep working while the flag is enabled.",
+        ) {
+            var primary by remember { mutableStateOf(Color(0xFF18A058)) }
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                DemoRow {
+                    NButton(onClick = { primary = Color(0xFF18A058) }) { NText("Green") }
+                    NButton(onClick = { primary = Color(0xFF2080F0) }) { NText("Blue") }
+                }
+                NConfigProvider(
+                    themeOverrides = NThemeOverrides(primaryColor = primary),
+                    inlineThemeDisabled = true,
+                ) {
+                    val current = LocalNTheme.current
+                    NCard(title = "inlineThemeDisabled = true") {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            NButton(type = NButtonType.Primary) { NText("Primary still uses the override") }
+                            NTag(text = "Tag", type = NStatus.Primary)
+                            NText(
+                                "Primary color: ${current.colors.primary}",
+                                color = current.colors.text3,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        DemoSection(
+            title = "No wrapper DOM",
+            description = "abstract is accepted for parity. Compose does not create a wrapper node, so " +
+                "the provider never adds layout of its own.",
+        ) {
+            NConfigProvider(theme = NTheme.Dark, abstract = true) {
+                val current = LocalNTheme.current
+                NCard(title = "No wrapper DOM") {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        NTag(text = "abstract = true", type = NStatus.Primary)
+                        NText(
+                            "The provider contributes theme and locale only.",
+                            color = current.colors.text2,
+                        )
+                    }
+                }
+            }
+        }
+
+        DemoSection(
+            title = "Namespace",
+            description = "Namespace prefixes detached DOM in naive-ui. Compose has no class prefix, so " +
+                "this demonstrates the equivalent guarantee: detached popups inherit the surrounding " +
+                "provider through composition.",
+        ) {
+            NConfigProvider(theme = NTheme.Dark) {
+                NPopover(
+                    content = {
+                        val popupTheme = LocalNTheme.current
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            NText(
+                                if (popupTheme.isDark) "Detached popup: dark" else "Detached popup: light",
+                                color = popupTheme.colors.text1,
+                                strong = true,
+                            )
+                            NText(
+                                "The popup is rendered outside the button but still sees this provider.",
+                                color = popupTheme.colors.text3,
+                            )
+                        }
+                    },
+                ) {
+                    NButton { NText("Hover for detached content") }
+                }
+            }
+        }
+
+        DemoSection(
+            title = "Use OS theme",
+            description = "isSystemInDarkTheme observes the operating system appearance. The provider " +
+                "follows it here, mirroring useOsTheme.",
+        ) {
+            val systemDark = isSystemInDarkTheme()
+            NConfigProvider(theme = if (systemDark) NTheme.Dark else NTheme.Light) {
+                val current = LocalNTheme.current
+                NCard(title = "System theme") {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        NText(
+                            "Your current system theme is ${if (systemDark) "dark" else "light"}.",
+                            color = current.colors.text2,
+                        )
+                        NTag(
+                            text = if (systemDark) "dark" else "light",
+                            type = if (systemDark) NStatus.Primary else NStatus.Info,
+                        )
+                    }
+                }
             }
         }
     }

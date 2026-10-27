@@ -1,55 +1,58 @@
 package cn.enaium.naiveui.sample.gallery.feedback
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
-import cn.enaium.naiveui.components.NTooltip
+import androidx.compose.ui.unit.sp
 import cn.enaium.naiveui.components.NButton
-import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.components.NSpace
+import cn.enaium.naiveui.components.NText
+import cn.enaium.naiveui.components.NTooltip
 import cn.enaium.naiveui.internal.NPlacement
 import cn.enaium.naiveui.internal.NTrigger
 import cn.enaium.naiveui.sample.gallery.DemoSection
 import cn.enaium.naiveui.sample.gallery.DocsPage
 import cn.enaium.naiveui.theme.NSize
 
-private val tooltipPlacements = listOf(
-    NPlacement.Top,
-    NPlacement.Bottom,
-    NPlacement.Left,
-    NPlacement.Right,
-    NPlacement.TopStart,
-    NPlacement.TopEnd,
-    NPlacement.BottomStart,
-    NPlacement.BottomEnd,
-)
+private const val tooltipText = "I wish they all could be California girls"
 
 @Composable
 fun TooltipDocs() {
     DocsPage(
         title = "Tooltip",
         description = "Tooltip provides a short hint about an element. It opens on hover by default and supports " +
-            "click triggers, delayed display, placements and a constrained width.",
+            "click or manual triggers, delayed display, all placements, arrow toggling, body width and show events.",
     ) {
         DemoSection(
             title = "Basic",
-            description = "Wrap the trigger with `NTooltip` and pass the hint through `text`.",
-            code = "NTooltip(text = \"I am a tooltip\") {\n    NButton { NText(\"Hover Me\") }\n}",
+            description = "If it looks like a duck, walks like a duck, and quacks like a duck... it must be a duck.",
+            code = "NTooltip(text = \"Duck\") {\n    NButton { NText(\"Duck\") }\n}",
         ) {
-            NTooltip(text = "I am a tooltip") {
-                NButton { NText("Hover Me") }
+            NTooltip(text = "If it looks like a duck, walks like a duck, and quacks like a duck...it must be a duck.") {
+                NButton { NText("Duck") }
             }
         }
 
         DemoSection(
             title = "Placement",
-            description = "There are twelve placements, including start and end aligned variants.",
+            description = "The demo page uses `top-start`. All twelve placements are available.",
         ) {
             NSpace(size = 8.dp, wrap = true) {
-                tooltipPlacements.forEach { placement ->
-                    NTooltip(text = placement.name, placement = placement) {
+                listOf(
+                    NPlacement.TopStart,
+                    NPlacement.Top,
+                    NPlacement.TopEnd,
+                    NPlacement.BottomStart,
+                    NPlacement.Bottom,
+                    NPlacement.BottomEnd,
+                    NPlacement.Left,
+                    NPlacement.Right,
+                ).forEach { placement ->
+                    NTooltip(text = "Woo, awesome! ($placement)", placement = placement) {
                         NButton(size = NSize.Small) { NText(placement.name) }
                     }
                 }
@@ -58,58 +61,104 @@ fun TooltipDocs() {
 
         DemoSection(
             title = "Trigger",
-            description = "`trigger` selects between hover and click. Click is useful on devices without a pointer.",
-            code = "NTooltip(text = \"Click triggered\", trigger = NTrigger.Click) {\n    NButton { NText(\"Click Me\") }\n}",
+            description = "Hover and click are automatic; a manual tooltip is driven by `show`.",
         ) {
+            var manualShow by remember { mutableStateOf(false) }
             NSpace(size = 8.dp) {
-                NTooltip(text = "Opened on hover", trigger = NTrigger.Hover) {
+                NTooltip(text = tooltipText, placement = NPlacement.Bottom, trigger = NTrigger.Hover) {
                     NButton { NText("Hover") }
                 }
-                NTooltip(text = "Opened on click", trigger = NTrigger.Click) {
+                NTooltip(text = tooltipText, placement = NPlacement.Bottom, trigger = NTrigger.Click) {
                     NButton { NText("Click") }
                 }
+                NTooltip(
+                    text = tooltipText,
+                    placement = NPlacement.Bottom,
+                    trigger = NTrigger.Manual,
+                    show = manualShow,
+                    onUpdateShow = { manualShow = it },
+                ) {
+                    NButton(onClick = { manualShow = !manualShow }) { NText("Manual") }
+                }
             }
         }
 
         DemoSection(
-            title = "Width",
-            description = "Constrain the popup with `width`. Without it the tooltip wraps at 280dp.",
-        ) {
-            NTooltip(
-                text = "Tooltips can wrap long text over multiple lines when a width is provided.",
-                width = 180.dp,
-            ) {
-                NButton { NText("Wrapped Tooltip") }
-            }
-        }
-
-        DemoSection(
-            title = "Custom content",
-            description = "The `content` slot replaces the text body for richer hints.",
-        ) {
-            NTooltip(
-                content = {
-                    Column(Modifier.width(160.dp)) {
-                        NText("Custom content", strong = true)
-                        NText("Any composable can be placed inside the tooltip.")
-                    }
-                },
-            ) {
-                NButton { NText("Custom Content") }
-            }
-        }
-
-        DemoSection(
-            title = "Disabled",
-            description = "Set `disabled` to keep the trigger from opening the tooltip.",
+            title = "No arrow",
+            description = "The arrow is rendered by default. Set `showArrow = false` to get a plain surface.",
         ) {
             NSpace(size = 8.dp) {
-                NTooltip(text = "You cannot see me", disabled = true) {
-                    NButton { NText("Disabled Tooltip") }
+                NTooltip(text = "The same as popover", showArrow = true) {
+                    NButton { NText("Show arrow by default") }
                 }
-                NTooltip(text = "This one still works", delay = 400) {
-                    NButton { NText("Delayed Tooltip") }
+                NTooltip(text = "The same as popover", showArrow = false) {
+                    NButton { NText("No arrow") }
                 }
+            }
+        }
+
+        DemoSection(
+            title = "Body style",
+            description = "Constrain the body with `maxWidth`; long and short text wrap inside the same width.",
+        ) {
+            NSpace(size = 8.dp, wrap = true) {
+                NTooltip(
+                    maxWidth = 400.dp,
+                    trigger = NTrigger.Click,
+                    text = "I wish they all could be California girls. I wish they all could be California girls. " +
+                        "I wish they all could be California girls.",
+                ) {
+                    NButton { NText("California Girls") }
+                }
+                NTooltip(
+                    maxWidth = 400.dp,
+                    trigger = NTrigger.Click,
+                    text = "I wish ...",
+                ) {
+                    NButton { NText("California Girls (short)") }
+                }
+            }
+        }
+
+        DemoSection(
+            title = "Event",
+            description = "`onUpdateShow` reports hover and click changes. Manual tooltips are driven by the parent " +
+                "and do not emit an event.",
+        ) {
+            var event by remember { mutableStateOf("No event yet") }
+            var manualShow by remember { mutableStateOf(false) }
+            Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                NSpace(size = 8.dp) {
+                    NTooltip(
+                        text = tooltipText,
+                        placement = NPlacement.Bottom,
+                        trigger = NTrigger.Hover,
+                        onUpdateShow = { event = "show: $it" },
+                    ) {
+                        NButton { NText("Hover") }
+                    }
+                    NTooltip(
+                        text = tooltipText,
+                        placement = NPlacement.Bottom,
+                        trigger = NTrigger.Click,
+                        onUpdateShow = { event = "show: $it" },
+                    ) {
+                        NButton { NText("Click") }
+                    }
+                    NTooltip(
+                        text = tooltipText,
+                        placement = NPlacement.Bottom,
+                        trigger = NTrigger.Manual,
+                        show = manualShow,
+                        onUpdateShow = { manualShow = it },
+                    ) {
+                        NButton(onClick = {
+                            manualShow = !manualShow
+                            event = "manual: $manualShow"
+                        }) { NText("Manual") }
+                    }
+                }
+                NText(event, size = 13.sp)
             }
         }
     }

@@ -1,5 +1,6 @@
 package cn.enaium.naiveui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -9,10 +10,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -43,6 +46,7 @@ import cn.enaium.naiveui.internal.NBaseLoading
 import cn.enaium.naiveui.internal.NPlacement
 import cn.enaium.naiveui.internal.NPopoverSurface
 import cn.enaium.naiveui.internal.NScrollbar
+import cn.enaium.naiveui.internal.NVirtualList
 import cn.enaium.naiveui.theme.LocalNLocale
 import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NSize
@@ -56,10 +60,14 @@ data class NCascaderOption(
     val value: Any,
     val children: List<NCascaderOption> = emptyList(),
     val disabled: Boolean = false,
+    val isLeaf: Boolean = children.isEmpty(),
 )
 
 /** Whether a column opens on hover or on click. */
 enum class NCascaderExpandTrigger { Click, Hover }
+
+/** How checked values are reported when parents and children are selected. */
+enum class NCascaderCheckStrategy { All, Parent, Child }
 
 private data class NCascaderMatch(
     val option: NCascaderOption,
@@ -114,19 +122,45 @@ private fun hasCascaderCheckedDescendant(node: NCascaderOption, checked: Set<Any
         isCascaderChecked(it, checked, true) || hasCascaderCheckedDescendant(it, checked)
     }
 
-private fun List<NCascaderOption>.canonicalCascaderChecked(raw: Set<Any>): List<Any> {
-    val result = LinkedHashSet<Any>()
-    fun visit(node: NCascaderOption): Boolean {
+private fun List<NCascaderOption>.canonicalCascaderChecked(
+    raw: Set<Any>,
+    strategy: NCascaderCheckStrategy,
+): List<Any> {
+    val fullyChecked = mutableMapOf<Any, Boolean>()
+    fun compute(node: NCascaderOption): Boolean {
         val checked = if (node.children.isEmpty()) {
             node.value in raw
         } else {
             val active = node.children.filter { !it.disabled }
-            if (active.isEmpty()) node.value in raw else active.map { visit(it) }.all { it }
+            if (active.isEmpty()) node.value in raw else active.map { compute(it) }.all { it }
         }
-        if (checked && !node.disabled) result.add(node.value)
+        fullyChecked[node.value] = checked
         return checked
     }
-    forEach { visit(it) }
+    forEach { compute(it) }
+    if (strategy == NCascaderCheckStrategy.Child) {
+        val result = LinkedHashSet<Any>()
+        fun collect(node: NCascaderOption) {
+            if (node.children.isEmpty() && fullyChecked[node.value] == true && !node.disabled) {
+                result.add(node.value)
+            }
+            node.children.forEach(::collect)
+        }
+        forEach(::collect)
+        return result.toList()
+    }
+    val result = LinkedHashSet<Any>()
+    fun collect(node: NCascaderOption, parentChecked: Boolean) {
+        val checked = fullyChecked[node.value] == true
+        val report = when (strategy) {
+            NCascaderCheckStrategy.All -> checked
+            NCascaderCheckStrategy.Parent -> checked && !parentChecked
+            NCascaderCheckStrategy.Child -> false
+        }
+        if (report && !node.disabled) result.add(node.value)
+        node.children.forEach { collect(it, checked) }
+    }
+    forEach { collect(it, false) }
     return result.toList()
 }
 
@@ -169,6 +203,15 @@ fun NCascader(
     loading: Boolean = false,
     show: Boolean? = null,
     onUpdateShow: (Boolean) -> Unit = {},
+    checkStrategy: NCascaderCheckStrategy = NCascaderCheckStrategy.All,
+    onLoad: ((NCascaderOption) -> Unit)? = null,
+    loadingKeys: Set<Any> = emptySet(),
+    virtualScroll: Boolean = true,
+    header: (@Composable () -> Unit)? = null,
+    action: (@Composable () -> Unit)? = null,
+    suffix: (@Composable () -> Unit)? = null,
+    renderLabel: (@Composable (option: NCascaderOption, checked: Boolean) -> Unit)? = null,
+    focusRequester: FocusRequester? = null,
 ) {
     val theme = LocalNTheme.current
     val locale = LocalNLocale.current
@@ -181,7 +224,8 @@ fun NCascader(
     var activePath by remember { mutableStateOf<List<NCascaderOption>>(emptyList()) }
     var activeIndex by remember { mutableStateOf(-1) }
     var triggerWidth by remember { mutableStateOf(0) }
-    val focusRequester = remember { FocusRequester() }
+    val internalFocusRequester = remember { FocusRequester() }
+    val resolvedFocusRequester = focusRequester ?: internalFocusRequester
     val inputFocusRequester = remember { FocusRequester() }
     val columnsScroll = rememberScrollState()
 
@@ -218,7 +262,12 @@ fun NCascader(
     val columns = remember(options, activePath) {
         buildList {
             add(options)
-            activePath.forEach { add(it.children) }
+            var current = options
+            for (node in activePath) {
+                val fresh = current.firstOrNull { it.value == node.value } ?: node
+                add(fresh.children)
+                current = fresh.children
+            }
         }
     }
     val activeColumn = columns.lastOrNull().orEmpty()
@@ -252,7 +301,7 @@ fun NCascader(
 
     fun emitChecked(next: Set<Any>) {
         onValueChange(
-            if (cascade) options.canonicalCascaderChecked(next)
+            if (cascade) options.canonicalCascaderChecked(next, checkStrategy)
             else next.toList(),
         )
     }
@@ -283,13 +332,25 @@ fun NCascader(
 
     fun activate(option: NCascaderOption, level: Int) {
         if (option.disabled) return
-        if (option.children.isNotEmpty()) {
+        val hasChildren = option.children.isNotEmpty() || !option.isLeaf
+        if (hasChildren) {
             activePath = activePath.take(level) + option
             activeIndex = 0
-            if (!multiMode && changeOnSelect) onValueChange(option.value)
+            if (option.children.isEmpty() && !option.isLeaf) {
+                onLoad?.invoke(option)
+            } else if (!multiMode && changeOnSelect) {
+                onValueChange(option.value)
+            }
         } else {
             selectLeaf(option)
         }
+    }
+
+    fun hoverExpand(option: NCascaderOption, level: Int) {
+        if (option.children.isEmpty()) return
+        if (option.value == activePath.getOrNull(level)?.value) return
+        activePath = activePath.take(level) + option
+        activeIndex = 0
     }
 
     fun moveColumnActive(delta: Int) {
@@ -317,7 +378,7 @@ fun NCascader(
         val removed = pathByValue[key]?.last()?.descendants()?.map { it.value }.orEmpty()
         val next = rawValues.filterNot { it == key || it in removed }
         if (cascade) {
-            onValueChange(options.canonicalCascaderChecked(next.toSet()))
+            onValueChange(options.canonicalCascaderChecked(next.toSet(), checkStrategy))
         } else {
             onValueChange(next)
         }
@@ -382,7 +443,7 @@ fun NCascader(
         NSelectionField(
             modifier = Modifier
                 .fillMaxWidth()
-                .focusRequester(focusRequester)
+                .focusRequester(resolvedFocusRequester)
                 .onKeyEvent(keyHandler),
             size = resolvedSize,
             status = status,
@@ -390,6 +451,8 @@ fun NCascader(
             active = expanded,
             interaction = interaction,
             loading = loading,
+            showArrow = true,
+            suffix = suffix,
             clearable = clearable && !disabled && hasValue,
             onClear = {
                 onValueChange(if (multiMode) emptyList<Any>() else null)
@@ -398,7 +461,8 @@ fun NCascader(
             onClick = {
                 if (!disabled) {
                     setShow(!expanded)
-                    if (filterable) inputFocusRequester.requestFocus() else focusRequester.requestFocus()
+                    if (filterable) inputFocusRequester.requestFocus()
+                    else resolvedFocusRequester.requestFocus()
                 }
             },
         ) {
@@ -478,64 +542,76 @@ fun NCascader(
             padding = PaddingValues(0.dp),
             modifier = Modifier.widthIn(min = menuWidth),
         ) {
-            if (loading) {
-                Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), Alignment.Center) {
-                    NBaseLoading()
+            Column(Modifier.fillMaxWidth()) {
+                header?.let {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) { it() }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(theme.colors.divider))
                 }
-            } else if (options.isEmpty()) {
-                NSelectEmptyView(Modifier.padding(vertical = 18.dp))
-            } else if (query.isNotBlank()) {
-                if (matches.isEmpty()) {
+                if (loading) {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), Alignment.Center) {
+                        NBaseLoading()
+                    }
+                } else if (options.isEmpty()) {
                     NSelectEmptyView(Modifier.padding(vertical = 18.dp))
-                } else {
-                    NScrollbar(
-                        modifier = Modifier.width(menuWidth).heightIn(max = 280.dp),
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                            matches.forEach { match ->
-                                NCascaderMatchRow(
-                                    match = match,
-                                    checked = multiMode && isCascaderChecked(
-                                        match.option,
-                                        effectiveChecked,
-                                        cascade,
-                                    ),
-                                    selected = !multiMode && match.option.value == singleValue,
-                                    size = resolvedSize,
-                                    onSelect = {
-                                        query = ""
-                                        if (multiMode) {
-                                            toggleCheck(match.option)
-                                        } else if (match.option.children.isNotEmpty() && !changeOnSelect) {
-                                            activePath = match.path
-                                        } else {
-                                            onValueChange(match.option.value)
-                                            setShow(false)
-                                        }
-                                    },
-                                )
+                } else if (query.isNotBlank()) {
+                    if (matches.isEmpty()) {
+                        NSelectEmptyView(Modifier.padding(vertical = 18.dp))
+                    } else {
+                        NScrollbar(
+                            modifier = Modifier.width(menuWidth).heightIn(max = 280.dp),
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                matches.forEach { match ->
+                                    NCascaderMatchRow(
+                                        match = match,
+                                        checked = multiMode && isCascaderChecked(
+                                            match.option,
+                                            effectiveChecked,
+                                            cascade,
+                                        ),
+                                        selected = !multiMode && match.option.value == singleValue,
+                                        size = resolvedSize,
+                                        onSelect = {
+                                            query = ""
+                                            if (multiMode) {
+                                                toggleCheck(match.option)
+                                            } else if (match.option.children.isNotEmpty() && !changeOnSelect) {
+                                                activePath = match.path
+                                            } else {
+                                                onValueChange(match.option.value)
+                                                setShow(false)
+                                            }
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
-                }
-            } else {
-                Row(
-                    Modifier
-                        .widthIn(max = 520.dp)
-                        .horizontalScroll(columnsScroll),
-                ) {
-                    columns.forEachIndexed { level, columnOptions ->
-                        NScrollbar(
-                            modifier = Modifier
-                                .width(150.dp)
-                                .heightIn(max = 280.dp),
-                        ) {
-                            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                                columnOptions.forEachIndexed { index, option ->
-                                    val inActivePath = activePath.getOrNull(level) == option
+                } else {
+                    Row(
+                        Modifier
+                            .widthIn(max = 520.dp)
+                            .horizontalScroll(columnsScroll),
+                    ) {
+                        columns.forEachIndexed { level, columnOptions ->
+                            val lastColumn = level == columns.lastIndex
+                            if (virtualScroll && columnOptions.size > 60) {
+                                val listState = remember(level) { LazyListState() }
+                                NVirtualList(
+                                    items = columnOptions,
+                                    modifier = Modifier.width(150.dp).height(240.dp),
+                                    itemHeight = nSelectionRowHeight(resolvedSize),
+                                    state = listState,
+                                ) { option ->
+                                    val index = columnOptions.indexOf(option)
                                     NCascaderColumnRow(
                                         option = option,
-                                        active = inActivePath || (level == columns.lastIndex && index == activeIndex),
+                                        active = activePath.getOrNull(level)?.value == option.value ||
+                                            (lastColumn && index == activeIndex),
                                         checked = multiMode && isCascaderChecked(
                                             option,
                                             effectiveChecked,
@@ -546,21 +622,59 @@ fun NCascader(
                                             hasCascaderCheckedDescendant(option, effectiveChecked),
                                         selected = !multiMode && option.value == singleValue,
                                         multiMode = multiMode,
+                                        loading = option.value in loadingKeys,
                                         expandOnHover = expandTrigger == NCascaderExpandTrigger.Hover,
                                         size = resolvedSize,
-                                        onHover = {
-                                            if (option.children.isNotEmpty() && option != activePath.getOrNull(level)) {
-                                                activePath = activePath.take(level) + option
-                                                activeIndex = 0
-                                            }
-                                        },
+                                        renderLabel = renderLabel,
+                                        onHover = { hoverExpand(option, level) },
                                         onCheck = { toggleCheck(option) },
                                         onClick = { activate(option, level) },
                                     )
                                 }
+                            } else {
+                                NScrollbar(
+                                    modifier = Modifier
+                                        .width(150.dp)
+                                        .heightIn(max = 280.dp),
+                                ) {
+                                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                        columnOptions.forEachIndexed { index, option ->
+                                            NCascaderColumnRow(
+                                                option = option,
+                                                active = activePath.getOrNull(level)?.value == option.value ||
+                                                    (lastColumn && index == activeIndex),
+                                                checked = multiMode && isCascaderChecked(
+                                                    option,
+                                                    effectiveChecked,
+                                                    cascade,
+                                                ),
+                                                indeterminate = multiMode && cascade &&
+                                                    !isCascaderChecked(option, effectiveChecked, cascade) &&
+                                                    hasCascaderCheckedDescendant(option, effectiveChecked),
+                                                selected = !multiMode && option.value == singleValue,
+                                                multiMode = multiMode,
+                                                loading = option.value in loadingKeys,
+                                                expandOnHover = expandTrigger == NCascaderExpandTrigger.Hover,
+                                                size = resolvedSize,
+                                                renderLabel = renderLabel,
+                                                onHover = { hoverExpand(option, level) },
+                                                onCheck = { toggleCheck(option) },
+                                                onClick = { activate(option, level) },
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
+                }
+                action?.let {
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(theme.colors.divider))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) { it() }
                 }
             }
         }
@@ -575,13 +689,16 @@ private fun NCascaderColumnRow(
     indeterminate: Boolean,
     selected: Boolean,
     multiMode: Boolean,
+    loading: Boolean,
     expandOnHover: Boolean,
     size: NSize,
+    renderLabel: (@Composable (option: NCascaderOption, checked: Boolean) -> Unit)?,
     onHover: () -> Unit,
     onCheck: () -> Unit,
     onClick: () -> Unit,
 ) {
     val theme = LocalNTheme.current
+    val hasChildren = option.children.isNotEmpty() || !option.isLeaf
     NSelectionMenuRow(
         onClick = onClick,
         enabled = !option.disabled,
@@ -600,19 +717,24 @@ private fun NCascaderColumnRow(
             )
             Spacer(Modifier.width(6.dp))
         }
-        NText(
-            option.label,
-            modifier = Modifier.weight(1f),
-            color = when {
-                option.disabled -> theme.colors.textDisabled
-                checked || selected -> theme.colors.primary
-                else -> theme.colors.text2
-            },
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (renderLabel != null) {
+            Box(Modifier.weight(1f)) { renderLabel(option, checked || selected) }
+        } else {
+            NText(
+                option.label,
+                modifier = Modifier.weight(1f),
+                color = when {
+                    option.disabled -> theme.colors.textDisabled
+                    checked || selected -> theme.colors.primary
+                    else -> theme.colors.text2
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         when {
-            option.children.isNotEmpty() -> NIcon(
+            loading -> NBaseLoading(size = 12.dp)
+            hasChildren -> NIcon(
                 NIcons.ChevronRight,
                 size = 14.dp,
                 color = if (option.disabled) theme.colors.iconDisabled else theme.colors.icon,

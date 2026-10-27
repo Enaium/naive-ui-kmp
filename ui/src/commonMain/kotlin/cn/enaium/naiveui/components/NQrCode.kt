@@ -13,15 +13,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.theme.LocalNTheme
+import coil3.compose.SubcomposeAsyncImage
 import qrcode.QRCode
 import qrcode.raw.ErrorCorrectionLevel
+
+/** Render mode for [NQrCode]. `Canvas` draws each module, `Svg` merges runs. */
+enum class NQrCodeType { Canvas, Svg }
 
 private fun nQrErrorCorrectionLevel(level: String): ErrorCorrectionLevel =
     when (level.trim().uppercase().firstOrNull()) {
@@ -43,12 +56,102 @@ private fun nQrMatrix(value: String, level: String): List<BooleanArray> {
     }
 }
 
+private fun DrawScope.nDrawQrModules(
+    modules: List<BooleanArray>,
+    color: Color,
+    origin: Offset,
+    cell: Float,
+    merged: Boolean,
+) {
+    if (!merged) {
+        for (row in modules.indices) {
+            val cells = modules[row]
+            for (column in cells.indices) {
+                if (cells[column]) {
+                    drawRect(
+                        color = color,
+                        topLeft = Offset(origin.x + column * cell, origin.y + row * cell),
+                        // Slight overlap avoids hairline seams between modules.
+                        size = Size(cell + 0.5f, cell + 0.5f),
+                    )
+                }
+            }
+        }
+        return
+    }
+    val path = Path()
+    for (row in modules.indices) {
+        val cells = modules[row]
+        var runStart = -1
+        for (column in cells.indices) {
+            val dark = cells[column]
+            if (dark && runStart < 0) runStart = column
+            if ((!dark || column == cells.lastIndex) && runStart >= 0) {
+                val runEnd = if (dark) column + 1 else column
+                path.addRect(
+                    Rect(
+                        left = origin.x + runStart * cell,
+                        top = origin.y + row * cell,
+                        right = origin.x + runEnd * cell,
+                        bottom = origin.y + (row + 1) * cell,
+                    ),
+                )
+                runStart = -1
+            }
+        }
+    }
+    drawPath(path, color)
+}
+
+/**
+ * Renders the QR modules of [value] into an [ImageBitmap].
+ *
+ * This is the portable half of downloading a QR code: Compose Multiplatform
+ * has no common file picker, so hosts can save or share the returned bitmap
+ * with their own platform API.
+ */
+fun NQrCodeBitmap(
+    value: String,
+    pixels: Int = 400,
+    color: Color = Color.Black,
+    backgroundColor: Color = Color.White,
+    errorCorrectionLevel: String = "M",
+    padding: Int = 24,
+): ImageBitmap? {
+    val modules = runCatching { nQrMatrix(value.ifEmpty { "-" }, errorCorrectionLevel) }.getOrNull()
+        ?: return null
+    if (modules.isEmpty()) return null
+    val size = pixels.coerceAtLeast(42)
+    val bitmap = ImageBitmap(size, size)
+    val canvas = Canvas(bitmap)
+    CanvasDrawScope().draw(
+        density = Density(1f),
+        layoutDirection = LayoutDirection.Ltr,
+        canvas = canvas,
+        size = Size(size.toFloat(), size.toFloat()),
+    ) {
+        drawRect(backgroundColor)
+        val area = (size - padding * 2).toFloat()
+        val cell = area / modules.size
+        nDrawQrModules(
+            modules = modules,
+            color = color,
+            origin = Offset(padding.toFloat(), padding.toFloat()),
+            cell = cell,
+            merged = false,
+        )
+    }
+    return bitmap
+}
+
 /**
  * Renders a QR code for [value] using `qrcode-kotlin` for the encoding and
  * Compose for the drawing.
  *
- * [errorCorrectionLevel] accepts `L`, `M`, `Q` and `H` (upper or lower case)
- * and defaults to `M`. The quiet zone is controlled by [padding].
+ * [type] switches between per-module rectangles and merged path runs.
+ * [iconSrc] is drawn in a rounded badge in the centre; use error correction
+ * level `H` when covering modules. [errorCorrectionLevel] accepts `L`, `M`,
+ * `Q` and `H`, and [padding] controls the quiet zone.
  */
 @Composable
 fun NQrCode(
@@ -59,6 +162,11 @@ fun NQrCode(
     backgroundColor: Color = Color.White,
     errorCorrectionLevel: String = "M",
     padding: Dp = 12.dp,
+    type: NQrCodeType = NQrCodeType.Canvas,
+    iconSrc: String? = null,
+    iconSize: Dp = 40.dp,
+    iconBackgroundColor: Color = Color.White,
+    iconBorderRadius: Dp = 4.dp,
 ) {
     val theme = LocalNTheme.current
     val matrix = remember(value, errorCorrectionLevel) {
@@ -79,18 +187,31 @@ fun NQrCode(
             Canvas(Modifier.fillMaxSize()) {
                 val count = modules.size
                 val cell = this.size.minDimension / count
-                for (row in 0 until count) {
-                    val cells = modules[row]
-                    for (column in 0 until count) {
-                        if (cells[column]) {
-                            drawRect(
-                                color = color,
-                                topLeft = Offset(column * cell, row * cell),
-                                // Slight overlap avoids hairline seams between modules.
-                                size = Size(cell + 0.5f, cell + 0.5f),
-                            )
-                        }
-                    }
+                nDrawQrModules(
+                    modules = modules,
+                    color = color,
+                    origin = Offset.Zero,
+                    cell = cell,
+                    merged = type == NQrCodeType.Svg,
+                )
+            }
+            if (iconSrc != null) {
+                Box(
+                    Modifier
+                        .size(iconSize)
+                        .clip(RoundedCornerShape(iconBorderRadius))
+                        .background(iconBackgroundColor)
+                        .padding(iconSize * 0.06f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    SubcomposeAsyncImage(
+                        model = iconSrc,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit,
+                        loading = {},
+                        error = {},
+                    )
                 }
             }
         }

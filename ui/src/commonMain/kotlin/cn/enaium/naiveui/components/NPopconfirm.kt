@@ -19,9 +19,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import cn.enaium.naiveui.components.NButton
-import cn.enaium.naiveui.components.NButtonType
-import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.internal.NPlacement
@@ -37,8 +34,8 @@ import kotlinx.coroutines.delay
 /**
  * Small confirmation popup anchored to an action trigger.
  *
- * Runs [onPositiveClick] or [onNegativeClick] and closes the popup. Use
- * [content] for custom body content.
+ * Runs [onPositiveClick] or [onNegativeClick] and closes the popup. The action
+ * row can be replaced with [actions] and the icon with [icon].
  */
 @Composable
 fun NPopconfirm(
@@ -47,43 +44,55 @@ fun NPopconfirm(
     positiveText: String? = null,
     negativeText: String? = null,
     showIcon: Boolean = true,
+    showPositive: Boolean = true,
+    showNegative: Boolean = true,
     type: NStatus = NStatus.Default,
     trigger: NTrigger = NTrigger.Click,
     placement: NPlacement = NPlacement.Top,
     disabled: Boolean = false,
     delay: Long = 100,
+    show: Boolean? = null,
+    onUpdateShow: ((Boolean) -> Unit)? = null,
     onPositiveClick: () -> Unit = {},
     onNegativeClick: () -> Unit = {},
+    actions: (@Composable () -> Unit)? = null,
+    icon: (@Composable () -> Unit)? = null,
     content: (@Composable () -> Unit)? = null,
     children: @Composable () -> Unit,
 ) {
     val theme = LocalNTheme.current
     val locale = LocalNLocale.current
-    var visible by remember { mutableStateOf(false) }
+    var innerVisible by remember { mutableStateOf(false) }
+    val visible = show ?: innerVisible
     val interaction = remember { MutableInteractionSource() }
     val contentInteraction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val contentHovered by contentInteraction.collectIsHoveredAsState()
 
-    LaunchedEffect(hovered, contentHovered, disabled, trigger) {
+    fun requestVisible(next: Boolean) {
+        if (next == visible) return
+        if (show == null) innerVisible = next
+        onUpdateShow?.invoke(next)
+    }
+
+    LaunchedEffect(hovered, contentHovered, disabled, trigger, show) {
         if (disabled) {
-            visible = false
+            if (show == null && innerVisible) innerVisible = false
             return@LaunchedEffect
         }
-        if (trigger == NTrigger.Hover) {
-            if (hovered || contentHovered) {
-                delay(delay)
-                visible = true
-            } else if (visible) {
-                delay(delay)
-                visible = false
-            }
+        if (trigger != NTrigger.Hover) return@LaunchedEffect
+        if (hovered || contentHovered) {
+            delay(delay)
+            requestVisible(true)
+        } else if (visible) {
+            delay(delay)
+            requestVisible(false)
         }
     }
 
     val triggerModifier = when (trigger) {
         NTrigger.Click, NTrigger.Focus -> Modifier.nTapTrigger(enabled = !disabled) {
-            visible = !visible
+            requestVisible(!visible)
         }
         else -> Modifier
     }
@@ -96,7 +105,7 @@ fun NPopconfirm(
         children()
         NPopoverSurface(
             visible = visible,
-            onDismiss = { visible = false },
+            onDismiss = { requestVisible(false) },
             placement = placement,
             focusable = trigger != NTrigger.Hover,
             dismissOnClickOutside = true,
@@ -109,15 +118,19 @@ fun NPopconfirm(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (showIcon) {
-                    NIcon(
-                        icon = type.icon(),
-                        size = 20.dp,
-                        color = if (type == NStatus.Default) {
-                            theme.colors.warning
-                        } else {
-                            theme.colors.statusColor(type)
-                        },
-                    )
+                    if (icon != null) {
+                        icon()
+                    } else {
+                        NIcon(
+                            icon = type.icon(),
+                            size = 20.dp,
+                            color = if (type == NStatus.Default) {
+                                theme.colors.warning
+                            } else {
+                                theme.colors.statusColor(type)
+                            },
+                        )
+                    }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (text != null) {
@@ -128,27 +141,35 @@ fun NPopconfirm(
                         )
                     }
                     if (content != null) content()
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                    ) {
-                        NButton(
-                            size = NSize.Small,
-                            onClick = {
-                                visible = false
-                                onNegativeClick()
-                            },
+                    if (actions != null) {
+                        actions()
+                    } else if (showPositive || showNegative) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                         ) {
-                            NText(negativeText ?: locale.popconfirmNo)
-                        }
-                        NButton(
-                            size = NSize.Small,
-                            type = type.buttonType(),
-                            onClick = {
-                                visible = false
-                                onPositiveClick()
-                            },
-                        ) {
-                            NText(positiveText ?: locale.popconfirmYes)
+                            if (showNegative) {
+                                NButton(
+                                    size = NSize.Small,
+                                    onClick = {
+                                        requestVisible(false)
+                                        onNegativeClick()
+                                    },
+                                ) {
+                                    NText(negativeText ?: locale.popconfirmNo)
+                                }
+                            }
+                            if (showPositive) {
+                                NButton(
+                                    size = NSize.Small,
+                                    type = type.buttonType(),
+                                    onClick = {
+                                        requestVisible(false)
+                                        onPositiveClick()
+                                    },
+                                ) {
+                                    NText(positiveText ?: locale.popconfirmYes)
+                                }
+                            }
                         }
                     }
                 }

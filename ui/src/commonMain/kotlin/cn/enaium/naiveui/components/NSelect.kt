@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
@@ -65,6 +66,7 @@ import cn.enaium.naiveui.internal.NClearButton
 import cn.enaium.naiveui.internal.NPlacement
 import cn.enaium.naiveui.internal.NPopoverSurface
 import cn.enaium.naiveui.internal.NScrollbar
+import cn.enaium.naiveui.internal.NVirtualList
 import cn.enaium.naiveui.internal.nBorder
 import cn.enaium.naiveui.internal.nClickable
 import cn.enaium.naiveui.theme.LocalNLocale
@@ -128,6 +130,24 @@ fun NSelect(
     maxTagCount: Int? = null,
     show: Boolean? = null,
     onUpdateShow: (Boolean) -> Unit = {},
+    fallbackOption: Boolean = true,
+    remote: Boolean = false,
+    tag: Boolean = false,
+    clearFilterAfterSelect: Boolean = true,
+    virtualScroll: Boolean = true,
+    menuWidth: Dp? = null,
+    showArrow: Boolean = true,
+    header: (@Composable () -> Unit)? = null,
+    action: (@Composable () -> Unit)? = null,
+    suffix: (@Composable () -> Unit)? = null,
+    renderOption: (@Composable (option: NSelectOption, selected: Boolean) -> Unit)? = null,
+    renderTag: (@Composable (option: NSelectOption?, value: Any, label: String, handleClose: () -> Unit) -> Unit)? = null,
+    onSearch: ((String) -> Unit)? = null,
+    onScroll: ((position: Int, maxValue: Int) -> Unit)? = null,
+    onFocus: (() -> Unit)? = null,
+    onBlur: (() -> Unit)? = null,
+    onClear: (() -> Unit)? = null,
+    focusRequester: FocusRequester? = null,
 ) {
     val theme = LocalNTheme.current
     val locale = LocalNLocale.current
@@ -139,13 +159,20 @@ fun NSelect(
     var query by remember { mutableStateOf("") }
     var activeIndex by remember { mutableStateOf(-1) }
     var triggerWidth by remember { mutableStateOf(0) }
-    val focusRequester = remember { FocusRequester() }
+    val internalFocusRequester = remember { FocusRequester() }
+    val resolvedFocusRequester = focusRequester ?: internalFocusRequester
     val inputFocusRequester = remember { FocusRequester() }
     val menuScroll: ScrollState = rememberScrollState()
 
     fun setShow(next: Boolean) {
         if (show == null) internalShow = next
         onUpdateShow(next)
+    }
+
+    fun updateQuery(next: String) {
+        query = next
+        if (remote) onSearch?.invoke(next)
+        if (!expanded) setShow(true)
     }
 
     val optionByValue = remember(options) {
@@ -155,21 +182,32 @@ fun NSelect(
         if (multiple) (value as? List<*>)?.mapNotNull { it } ?: emptyList()
         else listOfNotNull(value)
 
-    val filteredEntries = remember(options, query) {
-        if (query.isBlank()) {
+    val filteredEntries = remember(options, query, remote, tag) {
+        if (remote) {
             options
         } else {
-            options.mapNotNull { entry ->
-                when (entry) {
-                    is NSelectOption ->
-                        if (entry.label.contains(query, ignoreCase = true)) entry else null
-                    is NSelectGroupOption -> {
-                        val children = entry.children.filter {
-                            it.label.contains(query, ignoreCase = true)
+            val base = if (query.isBlank()) {
+                options
+            } else {
+                options.mapNotNull { entry ->
+                    when (entry) {
+                        is NSelectOption ->
+                            if (entry.label.contains(query, ignoreCase = true)) entry else null
+                        is NSelectGroupOption -> {
+                            val children = entry.children.filter {
+                                it.label.contains(query, ignoreCase = true)
+                            }
+                            if (children.isEmpty()) null else entry.copy(children = children)
                         }
-                        if (children.isEmpty()) null else entry.copy(children = children)
                     }
                 }
+            }
+            val needsCreatedOption = tag && query.isNotBlank() &&
+                base.none { it is NSelectOption && it.value == query }
+            if (needsCreatedOption) {
+                listOf<NSelectEntry>(NSelectOption(query, query)) + base
+            } else {
+                base
             }
         }
     }
@@ -178,16 +216,24 @@ fun NSelect(
 
     fun firstEnabledIndex(): Int = visibleOptions.indexOfFirst { !it.disabled }
 
-    LaunchedEffect(expanded, visibleOptions) {
+    fun selectedActiveIndex(): Int {
+        val selectedIndex = visibleOptions.indexOfFirst {
+            !it.disabled && selectedValues.contains(it.value)
+        }
+        return if (selectedIndex >= 0) selectedIndex else firstEnabledIndex()
+    }
+
+    LaunchedEffect(expanded) {
         if (expanded) {
-            val selectedIndex = visibleOptions.indexOfFirst {
-                !it.disabled && selectedValues.contains(it.value)
-            }
-            activeIndex = if (selectedIndex >= 0) selectedIndex else firstEnabledIndex()
+            activeIndex = selectedActiveIndex()
         } else {
             query = ""
             activeIndex = -1
         }
+    }
+
+    LaunchedEffect(visibleOptions) {
+        if (expanded) activeIndex = selectedActiveIndex()
     }
 
     fun moveActive(delta: Int) {
@@ -212,6 +258,12 @@ fun NSelect(
         onValueChange(if (multiple) next else next.firstOrNull())
     }
 
+    fun clearSelection() {
+        onValueChange(if (multiple) emptyList<Any>() else null)
+        query = ""
+        onClear?.invoke()
+    }
+
     fun choose(option: NSelectOption) {
         if (option.disabled || disabled) return
         if (multiple) {
@@ -222,9 +274,23 @@ fun NSelect(
                 next.add(option.value)
             }
             onValueChange(next.toList())
-            query = ""
+            if (clearFilterAfterSelect) query = ""
         } else {
             onValueChange(option.value)
+            setShow(false)
+        }
+    }
+
+    fun createFromQuery() {
+        val text = query.trim()
+        if (text.isEmpty()) return
+        if (multiple) {
+            if (selectedValues.none { it == text }) {
+                onValueChange(selectedValues + text)
+            }
+            query = ""
+        } else {
+            onValueChange(text)
             setShow(false)
         }
     }
@@ -243,7 +309,12 @@ fun NSelect(
                     true
                 }
                 Key.Enter -> {
-                    if (expanded) {
+                    if (tag && filterable && query.isNotBlank()) {
+                        val created = visibleOptions.firstOrNull {
+                            it.value == query || it.label == query
+                        }
+                        if (created != null) choose(created) else createFromQuery()
+                    } else if (expanded) {
                         visibleOptions.getOrNull(activeIndex)?.let { choose(it) }
                     } else {
                         setShow(true)
@@ -275,7 +346,8 @@ fun NSelect(
         }
     }
 
-    val menuWidth = if (triggerWidth > 0) with(density) { triggerWidth.toDp() } else 200.dp
+    val resolvedMenuWidth = menuWidth
+        ?: if (triggerWidth > 0) with(density) { triggerWidth.toDp() } else 200.dp
 
     Box(
         modifier
@@ -285,7 +357,7 @@ fun NSelect(
         NSelectionField(
             modifier = Modifier
                 .fillMaxWidth()
-                .focusRequester(focusRequester)
+                .focusRequester(resolvedFocusRequester)
                 .onKeyEvent(keyHandler),
             size = resolvedSize,
             status = status,
@@ -294,19 +366,27 @@ fun NSelect(
             interaction = interaction,
             loading = loading,
             clearable = clearable && !disabled && selectedValues.isNotEmpty(),
-            onClear = {
-                onValueChange(if (multiple) emptyList<Any>() else null)
-                query = ""
+            showArrow = showArrow,
+            suffix = suffix,
+            onClear = ::clearSelection,
+            onFocusChange = { focused ->
+                if (focused) onFocus?.invoke() else onBlur?.invoke()
             },
             onClick = {
                 if (!disabled) {
                     setShow(!expanded)
-                    if (filterable) inputFocusRequester.requestFocus() else focusRequester.requestFocus()
+                    if (filterable) inputFocusRequester.requestFocus()
+                    else resolvedFocusRequester.requestFocus()
                 }
             },
         ) {
             if (multiple) {
-                if (selectedValues.isEmpty() && !filterable) {
+                val tagLabels = selectedValues.mapNotNull { selected ->
+                    val label = optionByValue[selected]?.label
+                        ?: if (fallbackOption) selected.toString() else null
+                    label?.let { selected to it }
+                }
+                if (tagLabels.isEmpty() && !filterable) {
                     NText(
                         placeholderText,
                         color = theme.colors.placeholder,
@@ -315,22 +395,24 @@ fun NSelect(
                     )
                 } else {
                     NSelectionTags(
-                        labels = selectedValues.map { value ->
-                            value to (optionByValue[value]?.label ?: value.toString())
-                        },
+                        labels = tagLabels,
                         maxTagCount = maxTagCount,
                         size = resolvedSize,
                         disabled = disabled,
                         onRemove = ::removeValue,
+                        tagContent = if (renderTag != null) {
+                            { key, label, close ->
+                                renderTag.invoke(optionByValue[key], key, label, close)
+                            }
+                        } else {
+                            null
+                        },
                         trailing = if (filterable) {
                             {
                                 NSelectionFilterInput(
                                     query = query,
-                                    onQueryChange = {
-                                        query = it
-                                        if (!expanded) setShow(true)
-                                    },
-                                    placeholder = if (selectedValues.isEmpty()) placeholderText else "",
+                                    onQueryChange = ::updateQuery,
+                                    placeholder = if (tagLabels.isEmpty()) placeholderText else "",
                                     modifier = Modifier.widthIn(min = 60.dp).width(90.dp),
                                     size = resolvedSize,
                                     enabled = !disabled,
@@ -345,39 +427,57 @@ fun NSelect(
                     )
                 }
             } else {
-                val selected = selectedValues.firstOrNull()?.let { optionByValue[it] }
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    selected?.icon?.let {
-                        NIcon(it, size = 16.dp, color = theme.colors.icon)
-                        Spacer(Modifier.width(6.dp))
+                val selectedValue = selectedValues.firstOrNull()
+                val selectedOption = selectedValue?.let { optionByValue[it] }
+                val selectedLabel = selectedOption?.label
+                    ?: selectedValue?.takeIf { fallbackOption }?.toString()
+                if (renderTag != null && selectedValue != null) {
+                    Box(Modifier.fillMaxWidth()) {
+                        renderTag(
+                            selectedOption,
+                            selectedValue,
+                            selectedLabel ?: selectedValue.toString(),
+                        ) { clearSelection() }
                     }
-                    if (filterable) {
-                        NSelectionFilterInput(
-                            query = query,
-                            onQueryChange = {
-                                query = it
-                                if (!expanded) setShow(true)
-                            },
-                            placeholder = selected?.label ?: placeholderText,
-                            modifier = Modifier.weight(1f),
-                            size = resolvedSize,
-                            enabled = !disabled,
-                            focusRequester = inputFocusRequester,
-                            onFocus = { if (!disabled) setShow(true) },
-                            onKeyEvent = keyHandler,
-                            textColor = if (selected != null) theme.colors.text1 else theme.colors.text2,
-                        )
-                    } else {
-                        NText(
-                            selected?.label ?: placeholderText,
-                            modifier = Modifier.weight(1f),
-                            color = if (selected != null) theme.colors.text1 else theme.colors.placeholder,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        selectedOption?.icon?.let {
+                            NIcon(it, size = 16.dp, color = theme.colors.icon)
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        if (filterable) {
+                            NSelectionFilterInput(
+                                query = query,
+                                onQueryChange = ::updateQuery,
+                                placeholder = selectedLabel ?: placeholderText,
+                                modifier = Modifier.weight(1f),
+                                size = resolvedSize,
+                                enabled = !disabled,
+                                focusRequester = inputFocusRequester,
+                                onFocus = { if (!disabled) setShow(true) },
+                                onKeyEvent = keyHandler,
+                                textColor = if (selectedLabel != null) {
+                                    theme.colors.text1
+                                } else {
+                                    theme.colors.text2
+                                },
+                            )
+                        } else {
+                            NText(
+                                selectedLabel ?: placeholderText,
+                                modifier = Modifier.weight(1f),
+                                color = if (selectedLabel != null) {
+                                    theme.colors.text1
+                                } else {
+                                    theme.colors.placeholder
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }
@@ -390,87 +490,142 @@ fun NSelect(
             offset = IntOffset(0, 4),
             focusable = false,
             padding = PaddingValues(0.dp),
-            modifier = Modifier.width(menuWidth),
+            modifier = Modifier.width(resolvedMenuWidth),
         ) {
-            if (loading) {
-                Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), Alignment.Center) {
-                    NBaseLoading()
+            Column(Modifier.fillMaxWidth()) {
+                header?.let {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) { it() }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(theme.colors.divider))
                 }
-            } else if (visibleOptions.isEmpty()) {
-                NSelectEmptyView(Modifier.padding(vertical = 18.dp))
-            } else {
-                LaunchedEffect(activeIndex, expanded) {
-                    if (expanded && activeIndex >= 0) {
-                        var offsetPx = 0f
-                        var count = 0
-                        var found = false
-                        for (entry in filteredEntries) {
-                            if (entry is NSelectGroupOption) {
-                                offsetPx += with(density) { 26.dp.toPx() }
-                                offsetPx += with(density) { 4.dp.toPx() }
-                            }
-                            val entries = when (entry) {
-                                is NSelectOption -> listOf(entry)
-                                is NSelectGroupOption -> entry.children
-                            }
-                            for (option in entries) {
-                                if (count == activeIndex) {
-                                    found = true
-                                    break
-                                }
-                                offsetPx += with(density) { nSelectionRowHeight(resolvedSize).toPx() }
-                                count++
-                            }
-                            if (found) break
-                        }
-                        val target = (offsetPx - with(density) { 4.dp.toPx() }).roundToInt()
-                        menuScroll.animateScrollTo(target.coerceAtLeast(0))
+                if (loading) {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), Alignment.Center) {
+                        NBaseLoading()
                     }
-                }
-                NScrollbar(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 264.dp),
-                    scrollState = menuScroll,
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        var optionIndex = 0
-                        filteredEntries.forEach { entry ->
-                            when (entry) {
-                                is NSelectOption -> {
-                                    val index = optionIndex++
-                                    NSelectOptionRow(
-                                        option = entry,
-                                        selected = selectedValues.contains(entry.value),
-                                        active = index == activeIndex,
-                                        size = resolvedSize,
-                                        onClick = { choose(entry) },
-                                    )
+                } else if (visibleOptions.isEmpty()) {
+                    NSelectEmptyView(Modifier.padding(vertical = 18.dp))
+                } else {
+                    val flatMenu = filteredEntries.all { it is NSelectOption }
+                    if (virtualScroll && flatMenu) {
+                        val lazyState = rememberLazyListState()
+                        LaunchedEffect(activeIndex, expanded, visibleOptions) {
+                            if (expanded && activeIndex >= 0) {
+                                lazyState.animateScrollToItem(activeIndex)
+                            }
+                        }
+                        LaunchedEffect(lazyState.firstVisibleItemIndex) {
+                            onScroll?.invoke(
+                                lazyState.firstVisibleItemIndex,
+                                (visibleOptions.size - 1).coerceAtLeast(0),
+                            )
+                        }
+                        NVirtualList(
+                            items = visibleOptions,
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 264.dp),
+                            itemHeight = nSelectionRowHeight(resolvedSize),
+                            state = lazyState,
+                        ) { option ->
+                            val index = visibleOptions.indexOf(option)
+                            NSelectOptionRow(
+                                option = option,
+                                selected = selectedValues.contains(option.value),
+                                active = index == activeIndex,
+                                size = resolvedSize,
+                                renderOption = renderOption,
+                                onClick = { choose(option) },
+                            )
+                        }
+                    } else {
+                        LaunchedEffect(activeIndex, expanded) {
+                            if (expanded && activeIndex >= 0) {
+                                var offsetPx = 0f
+                                var count = 0
+                                var found = false
+                                for (entry in filteredEntries) {
+                                    if (entry is NSelectGroupOption) {
+                                        offsetPx += with(density) { 26.dp.toPx() }
+                                        offsetPx += with(density) { 4.dp.toPx() }
+                                    }
+                                    val entries = when (entry) {
+                                        is NSelectOption -> listOf(entry)
+                                        is NSelectGroupOption -> entry.children
+                                    }
+                                    for (option in entries) {
+                                        if (count == activeIndex) {
+                                            found = true
+                                            break
+                                        }
+                                        offsetPx += with(density) { nSelectionRowHeight(resolvedSize).toPx() }
+                                        count++
+                                    }
+                                    if (found) break
                                 }
-                                is NSelectGroupOption -> {
-                                    NText(
-                                        entry.label,
-                                        modifier = Modifier.padding(
-                                            start = 12.dp,
-                                            end = 12.dp,
-                                            top = 8.dp,
-                                            bottom = 2.dp,
-                                        ),
-                                        size = theme.typography.fontSize.mini,
-                                        color = theme.colors.text3,
-                                    )
-                                    entry.children.forEach { option ->
-                                        val index = optionIndex++
-                                        NSelectOptionRow(
-                                            option = option,
-                                            selected = selectedValues.contains(option.value),
-                                            active = index == activeIndex,
-                                            size = resolvedSize,
-                                            onClick = { choose(option) },
-                                        )
+                                val target = (offsetPx - with(density) { 4.dp.toPx() }).roundToInt()
+                                menuScroll.animateScrollTo(target.coerceAtLeast(0))
+                            }
+                        }
+                        LaunchedEffect(menuScroll.value, menuScroll.maxValue) {
+                            onScroll?.invoke(menuScroll.value, menuScroll.maxValue)
+                        }
+                        NScrollbar(
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 264.dp),
+                            scrollState = menuScroll,
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                var optionIndex = 0
+                                filteredEntries.forEach { entry ->
+                                    when (entry) {
+                                        is NSelectOption -> {
+                                            val index = optionIndex++
+                                            NSelectOptionRow(
+                                                option = entry,
+                                                selected = selectedValues.contains(entry.value),
+                                                active = index == activeIndex,
+                                                size = resolvedSize,
+                                                renderOption = renderOption,
+                                                onClick = { choose(entry) },
+                                            )
+                                        }
+                                        is NSelectGroupOption -> {
+                                            NText(
+                                                entry.label,
+                                                modifier = Modifier.padding(
+                                                    start = 12.dp,
+                                                    end = 12.dp,
+                                                    top = 8.dp,
+                                                    bottom = 2.dp,
+                                                ),
+                                                size = theme.typography.fontSize.mini,
+                                                color = theme.colors.text3,
+                                            )
+                                            entry.children.forEach { option ->
+                                                val index = optionIndex++
+                                                NSelectOptionRow(
+                                                    option = option,
+                                                    selected = selectedValues.contains(option.value),
+                                                    active = index == activeIndex,
+                                                    size = resolvedSize,
+                                                    renderOption = renderOption,
+                                                    onClick = { choose(option) },
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                }
+                action?.let {
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(theme.colors.divider))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) { it() }
                 }
             }
         }
@@ -484,6 +639,7 @@ private fun NSelectOptionRow(
     active: Boolean,
     size: NSize,
     onClick: () -> Unit,
+    renderOption: (@Composable (option: NSelectOption, selected: Boolean) -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
     val enabled = !option.disabled
@@ -493,7 +649,9 @@ private fun NSelectOptionRow(
         active = active,
         height = nSelectionRowHeight(size),
     ) {
-        if (option.icon != null) {
+        if (renderOption != null) {
+            Box(Modifier.weight(1f)) { renderOption(option, selected) }
+        } else if (option.icon != null) {
             NIcon(
                 option.icon,
                 size = 16.dp,
@@ -501,17 +659,19 @@ private fun NSelectOptionRow(
             )
             Spacer(Modifier.width(8.dp))
         }
-        NText(
-            option.label,
-            modifier = Modifier.weight(1f),
-            color = when {
-                !enabled -> theme.colors.textDisabled
-                selected -> theme.colors.primary
-                else -> theme.colors.text2
-            },
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (renderOption == null) {
+            NText(
+                option.label,
+                modifier = Modifier.weight(1f),
+                color = when {
+                    !enabled -> theme.colors.textDisabled
+                    selected -> theme.colors.primary
+                    else -> theme.colors.text2
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (selected) {
             Spacer(Modifier.width(8.dp))
             NIcon(NIcons.Checkmark, size = 16.dp, color = theme.colors.primary)
@@ -544,11 +704,18 @@ internal fun NSelectionField(
     clearable: Boolean = false,
     onClear: () -> Unit = {},
     showArrow: Boolean = true,
+    suffix: (@Composable () -> Unit)? = null,
+    onFocusChange: ((Boolean) -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val theme = LocalNTheme.current
     val hovered by interaction.collectIsHoveredAsState()
     val focused by interaction.collectIsFocusedAsState()
+    var wasFocused by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(focused) {
+        if (wasFocused != null && wasFocused != focused) onFocusChange?.invoke(focused)
+        wasFocused = focused
+    }
     val shape = RoundedCornerShape(theme.borderRadius)
     val borderColor = when {
         disabled -> theme.colors.border
@@ -592,6 +759,7 @@ internal fun NSelectionField(
             }
             when {
                 loading -> NBaseLoading(size = 16.dp, color = theme.colors.primary)
+                suffix != null -> Box(contentAlignment = Alignment.Center) { suffix() }
                 showArrow -> NIcon(
                     NIcons.ChevronDown,
                     modifier = Modifier.rotate(if (active) 180f else 0f),
@@ -612,6 +780,7 @@ internal fun NSelectionTags(
     size: NSize,
     disabled: Boolean,
     onRemove: (Any) -> Unit,
+    tagContent: (@Composable (key: Any, label: String, close: () -> Unit) -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val shown = maxTagCount?.let { labels.take(it.coerceAtLeast(0)) } ?: labels
@@ -623,12 +792,16 @@ internal fun NSelectionTags(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         shown.forEach { (key, label) ->
-            NTag(
-                text = label,
-                size = tagSize,
-                closable = !disabled,
-                onClose = { onRemove(key) },
-            )
+            if (tagContent != null) {
+                tagContent(key, label) { onRemove(key) }
+            } else {
+                NTag(
+                    text = label,
+                    size = tagSize,
+                    closable = !disabled,
+                    onClose = { onRemove(key) },
+                )
+            }
         }
         if (hidden > 0) {
             NTag(text = "+$hidden", size = tagSize)

@@ -2,12 +2,17 @@ package cn.enaium.naiveui.sample.gallery.display
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
+import cn.enaium.naiveui.components.NRadio
+import cn.enaium.naiveui.components.NRadioGroup
+import cn.enaium.naiveui.components.NSwitch
 import cn.enaium.naiveui.components.NTable
 import cn.enaium.naiveui.components.NTableAlign
 import cn.enaium.naiveui.components.NTableColumn
@@ -119,25 +124,92 @@ NTable(
 
         DemoSection(
             title = "Bordered",
-            description = "Set `bordered` and `singleLine` to control the outer border and column dividers.",
+            description = "`bordered` draws the outer frame while `singleLine` controls the vertical " +
+                "dividers between columns. Toggle each option to compare.",
+            code = """
+var bordered by remember { mutableStateOf(true) }
+var singleLine by remember { mutableStateOf(false) }
+
+NTable(
+    columns = columns,
+    data = data,
+    bordered = bordered,
+    singleLine = singleLine,
+)
+""".trimIndent(),
         ) {
+            var bordered by remember { mutableStateOf(true) }
+            var singleLine by remember { mutableStateOf(false) }
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                val columns = listOf(
-                    NTableColumn("word", "Word", width = 140.dp),
-                    NTableColumn("meaning", "Meaning"),
-                    NTableColumn("example", "Example"),
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    TableOption("Bordered", bordered) { bordered = it }
+                    TableOption("Single line", singleLine) { singleLine = it }
+                }
                 NTable(
-                    columns = columns,
+                    columns = listOf(
+                        NTableColumn("word", "Word", width = 140.dp),
+                        NTableColumn("meaning", "Meaning"),
+                        NTableColumn("example", "Example"),
+                    ),
                     data = wordRows.take(2),
-                    bordered = true,
+                    bordered = bordered,
+                    singleLine = singleLine,
+                )
+            }
+        }
+
+        DemoSection(
+            title = "Single column",
+            description = "`singleColumn` removes dividers between rows; only the last row keeps a " +
+                "border. Toggle it to compare with the default layout.",
+            code = """
+NTable(
+    columns = columns,
+    data = data,
+    singleColumn = singleColumn,
+    singleLine = false,
+)
+""".trimIndent(),
+        ) {
+            var singleColumn by remember { mutableStateOf(true) }
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                TableOption("Single column", singleColumn) { singleColumn = it }
+                NTable(
+                    columns = listOf(
+                        NTableColumn("word", "Word", width = 140.dp),
+                        NTableColumn("meaning", "Meaning"),
+                        NTableColumn("example", "Example"),
+                    ),
+                    data = wordRows,
+                    singleColumn = singleColumn,
                     singleLine = false,
                 )
+            }
+        }
+
+        DemoSection(
+            title = "Single line",
+            description = "With `singleLine` enabled only horizontal row dividers are drawn. " +
+                "Turn it off to show the vertical column dividers.",
+            code = """
+NTable(
+    columns = columns,
+    data = data,
+    singleLine = singleLine,
+)
+""".trimIndent(),
+        ) {
+            var singleLine by remember { mutableStateOf(true) }
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                TableOption("Single line", singleLine) { singleLine = it }
                 NTable(
-                    columns = columns,
-                    data = wordRows.take(2),
-                    bordered = false,
-                    singleLine = true,
+                    columns = listOf(
+                        NTableColumn("word", "Word", width = 140.dp),
+                        NTableColumn("meaning", "Meaning"),
+                        NTableColumn("example", "Example"),
+                    ),
+                    data = wordRows,
+                    singleLine = singleLine,
                 )
             }
         }
@@ -145,30 +217,60 @@ NTable(
         DemoSection(
             title = "Striped",
             description = "Alternating row backgrounds make wide tables easier to scan.",
+            code = """
+NTable(
+    columns = columns,
+    data = data,
+    striped = striped,
+)
+""".trimIndent(),
         ) {
-            NTable(
-                columns = listOf(
-                    NTableColumn("name", "Name"),
-                    NTableColumn("age", "Age", width = 90.dp, align = NTableAlign.Right),
-                    NTableColumn("address", "Address"),
-                ),
-                data = peopleRows,
-                striped = true,
-            )
+            var striped by remember { mutableStateOf(true) }
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                TableOption("Striped", striped) { striped = it }
+                NTable(
+                    columns = listOf(
+                        NTableColumn("name", "Name"),
+                        NTableColumn("age", "Age", width = 90.dp, align = NTableAlign.Right),
+                        NTableColumn("address", "Address"),
+                    ),
+                    data = peopleRows,
+                    striped = striped,
+                )
+            }
         }
 
         DemoSection(
             title = "Size",
-            description = "Tables inherit the provider size but can also set it directly.",
+            description = "Tables inherit the provider size but can also set it directly. " +
+                "Pick a size to update the row height and font.",
+            code = """
+NTable(
+    columns = columns,
+    data = data,
+    size = size,
+    bordered = false,
+)
+""".trimIndent(),
         ) {
+            var size by remember { mutableStateOf(NSize.Medium) }
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                val columns = listOf(
-                    NTableColumn("name", "Name"),
-                    NTableColumn("age", "Age"),
-                    NTableColumn("address", "Address"),
+                NRadioGroup(size, { size = (it ?: NSize.Medium) as NSize }) {
+                    NRadio(value = NSize.Small, label = "Small")
+                    NRadio(value = NSize.Medium, label = "Medium")
+                    NRadio(value = NSize.Large, label = "Large")
+                }
+                NTable(
+                    columns = listOf(
+                        NTableColumn("name", "Name"),
+                        NTableColumn("age", "Age"),
+                        NTableColumn("address", "Address"),
+                    ),
+                    data = peopleRows.take(3),
+                    size = size,
+                    bordered = false,
+                    singleLine = false,
                 )
-                NTable(columns, peopleRows.take(2), size = NSize.Small, bordered = false)
-                NTable(columns, peopleRows.take(2), size = NSize.Large, bordered = false)
             }
         }
 
@@ -251,5 +353,21 @@ NTable(
                 },
             )
         }
+    }
+}
+
+/** A labelled switch used by the table demos to toggle a table prop. */
+@Composable
+private fun TableOption(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        NText(label)
+        NSwitch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

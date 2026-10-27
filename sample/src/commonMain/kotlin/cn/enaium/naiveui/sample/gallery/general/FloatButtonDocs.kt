@@ -9,15 +9,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cn.enaium.naiveui.components.NBadge
+import cn.enaium.naiveui.components.NFlex
 import cn.enaium.naiveui.components.NFloatButton
 import cn.enaium.naiveui.components.NFloatButtonGroup
+import cn.enaium.naiveui.components.NFloatButtonMenuTrigger
 import cn.enaium.naiveui.components.NFloatButtonShape
 import cn.enaium.naiveui.components.NFloatButtonType
 import cn.enaium.naiveui.components.NTag
 import cn.enaium.naiveui.components.NText
-import cn.enaium.naiveui.components.NFlex
+import cn.enaium.naiveui.components.NTooltip
 import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.icons.NIcon
+import cn.enaium.naiveui.internal.NPlacement
 import cn.enaium.naiveui.sample.gallery.DemoSection
 import cn.enaium.naiveui.sample.gallery.DocsPage
 import cn.enaium.naiveui.theme.NStatus
@@ -74,6 +78,67 @@ NFloatButton(onClick = { ... }) {
                 NFloatButton(shape = NFloatButtonShape.Square, description = "Search") { }
                 NFloatButton(shape = NFloatButtonShape.Square, description = "Long Docs") {
                     NIcon(NIcons.File)
+                }
+            }
+        }
+
+        DemoSection(
+            title = "Badge",
+            description = "Wrap the icon in `NBadge` to show a count, dot or custom marker.",
+        ) {
+            NFlex(size = 12.dp, wrap = true) {
+                NFloatButton { NBadge(value = 9) { NIcon(NIcons.Add) } }
+                NFloatButton { NBadge(value = 100, max = 99) { NIcon(NIcons.Add) } }
+                NFloatButton { NBadge(dot = true) { NIcon(NIcons.Add) } }
+                NFloatButton { NBadge(value = "New") { NIcon(NIcons.Add) } }
+            }
+        }
+
+        DemoSection(
+            title = "Show menu",
+            description = "`menuTrigger` folds more float buttons into one; the menu " +
+                "unfolds above the button.",
+        ) {
+            NFlex(size = 32.dp, wrap = true) {
+                NFloatButton(
+                    type = NFloatButtonType.Primary,
+                    menuTrigger = NFloatButtonMenuTrigger.Hover,
+                    menu = {
+                        NFloatButton(shape = NFloatButtonShape.Square, type = NFloatButtonType.Primary) {
+                            NIcon(NIcons.Add, color = Color.White)
+                        }
+                        NFloatButton { NIcon(NIcons.Search) }
+                        NFloatButton { NIcon(NIcons.File) }
+                    },
+                ) {
+                    NIcon(NIcons.MenuIcon, color = Color.White)
+                }
+                NFloatButton(
+                    type = NFloatButtonType.Primary,
+                    menuTrigger = NFloatButtonMenuTrigger.Click,
+                    menu = {
+                        NFloatButton(shape = NFloatButtonShape.Square, type = NFloatButtonType.Primary) {
+                            NIcon(NIcons.Add, color = Color.White)
+                        }
+                        NFloatButton { NIcon(NIcons.Search) }
+                        NFloatButton { NIcon(NIcons.File) }
+                    },
+                ) {
+                    NIcon(NIcons.Add, color = Color.White)
+                }
+            }
+        }
+
+        DemoSection(
+            title = "Tooltip",
+            description = "Wrap the button in `NTooltip` for a hover hint.",
+        ) {
+            NFlex(size = 12.dp) {
+                NTooltip(text = "Create", placement = NPlacement.Right) {
+                    NFloatButton { NIcon(NIcons.Add) }
+                }
+                NTooltip(text = "Search", placement = NPlacement.Right) {
+                    NFloatButton { NIcon(NIcons.Search) }
                 }
             }
         }

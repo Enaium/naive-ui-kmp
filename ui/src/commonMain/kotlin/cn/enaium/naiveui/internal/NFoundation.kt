@@ -32,7 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -149,18 +149,18 @@ fun Modifier.nShadow(
     shape: Shape = RoundedCornerShape(theme.borderRadius),
 ): Modifier {
     val elevation = when (level.coerceIn(1, 3)) {
-        1 -> 4.dp
-        2 -> 8.dp
-        else -> 16.dp
+        1 -> 6.dp
+        2 -> 10.dp
+        else -> 18.dp
     }
-    val alpha = if (theme.isDark) 0.45f else 0.18f
-    return shadow(
-        elevation = elevation,
-        shape = shape,
-        clip = false,
-        ambientColor = Color.Black.copy(alpha = alpha * 0.6f),
-        spotColor = Color.Black.copy(alpha = alpha),
-    )
+    val alpha = if (theme.isDark) 0.5f else 0.22f
+    return dropShadow(shape) {
+        radius = elevation.toPx()
+        spread = 0f
+        color = Color.Black
+        this.alpha = alpha
+        offset = androidx.compose.ui.geometry.Offset(0f, 2.dp.toPx())
+    }
 }
 
 @Composable

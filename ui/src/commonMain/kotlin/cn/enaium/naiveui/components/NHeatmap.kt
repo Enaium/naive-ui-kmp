@@ -2,6 +2,10 @@ package cn.enaium.naiveui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.offset
@@ -67,6 +71,37 @@ private fun nDefaultHeatmapScale(theme: NTheme): List<Color> = if (theme.isDark)
     )
 }
 
+/** Built-in heatmap palettes from lightest to darkest. */
+enum class NHeatmapColorTheme { Green, Blue, Orange, Purple, Red }
+
+private fun nHeatmapThemeScale(theme: NHeatmapColorTheme, dark: Boolean): List<Color> = when (theme) {
+    NHeatmapColorTheme.Green -> if (dark) {
+        listOf(Color(0xFF161B22), Color(0xFF0E4429), Color(0xFF006D32), Color(0xFF26A641), Color(0xFF39D353))
+    } else {
+        listOf(Color(0xFFEBEDF0), Color(0xFF9BE9A8), Color(0xFF40C463), Color(0xFF30A14E), Color(0xFF216E39))
+    }
+    NHeatmapColorTheme.Blue -> if (dark) {
+        listOf(Color(0xFF161B22), Color(0xFF0B2E4F), Color(0xFF11508A), Color(0xFF1F78C8), Color(0xFF58A6FF))
+    } else {
+        listOf(Color(0xFFEBEDF0), Color(0xFFBBDDF5), Color(0xFF6FB6EA), Color(0xFF2F82C9), Color(0xFF0B5A9B))
+    }
+    NHeatmapColorTheme.Orange -> if (dark) {
+        listOf(Color(0xFF1F1A16), Color(0xFF4A2A0E), Color(0xFF7A4412), Color(0xFFB4661A), Color(0xFFF0A020))
+    } else {
+        listOf(Color(0xFFEBEDF0), Color(0xFFFBD8A8), Color(0xFFF5B05C), Color(0xFFE68115), Color(0xFFB35A00))
+    }
+    NHeatmapColorTheme.Purple -> if (dark) {
+        listOf(Color(0xFF191621), Color(0xFF2E2350), Color(0xFF4A347E), Color(0xFF6E4BB5), Color(0xFFA06FE8))
+    } else {
+        listOf(Color(0xFFEBEDF0), Color(0xFFDCCDF2), Color(0xFFB394E0), Color(0xFF8A5BC8), Color(0xFF5F2E9B))
+    }
+    NHeatmapColorTheme.Red -> if (dark) {
+        listOf(Color(0xFF211616), Color(0xFF4E1C1C), Color(0xFF7E2626), Color(0xFFB03333), Color(0xFFE05555))
+    } else {
+        listOf(Color(0xFFEBEDF0), Color(0xFFF8C9C9), Color(0xFFF08F8F), Color(0xFFD94F4F), Color(0xFFA61B1B))
+    }
+}
+
 private fun nNormalizeHeatmapValue(value: Float, min: Float, max: Float): Float {
     if (max <= min) return if (value > 0f) 1f else 0f
     return ((value - min) / (max - min)).coerceIn(0f, 1f)
@@ -89,16 +124,18 @@ private fun nHeatmapScaleColor(scale: List<Color>, fraction: Float): Color {
  * shows a tooltip with both axis labels and the formatted value.
  */
 @Composable
-fun NHeatmap(
+private fun NHeatmapGrid(
     data: List<NHeatmapCell>,
     modifier: Modifier = Modifier,
     xLabels: List<String> = emptyList(),
     yLabels: List<String> = emptyList(),
     colorScale: List<Color> = emptyList(),
+    colorTheme: NHeatmapColorTheme? = null,
     cellSize: Dp = 26.dp,
     cellGap: Dp = 3.dp,
     showValues: Boolean = false,
     tooltip: Boolean = true,
+    customTooltip: (@Composable (NHeatmapCell?) -> Unit)? = null,
     valueFormatter: (Float) -> String = { value -> value.roundToInt().toString() },
 ) {
     val theme = LocalNTheme.current
@@ -125,8 +162,12 @@ fun NHeatmap(
     val rows = maxOf(data.maxOfOrNull { it.y + 1 } ?: 0, yLabels.size, 1)
     val minValue = data.minOfOrNull { it.value } ?: 0f
     val maxValue = data.maxOfOrNull { it.value } ?: 1f
-    val scale = remember(colorScale, theme) {
-        if (colorScale.isNotEmpty()) colorScale else nDefaultHeatmapScale(theme)
+    val scale = remember(colorScale, colorTheme, theme.isDark) {
+        when {
+            colorScale.isNotEmpty() -> colorScale
+            colorTheme != null -> nHeatmapThemeScale(colorTheme, theme.isDark)
+            else -> nDefaultHeatmapScale(theme)
+        }
     }
     val cells = remember(data) { data.associateBy { it.x to it.y } }
     val yLabelWidth = if (yLabels.isEmpty()) {
@@ -267,20 +308,24 @@ fun NHeatmap(
                     .nBorder(theme.colors.border, 1.dp, theme.borderRadius)
                     .padding(horizontal = 8.dp, vertical = 6.dp),
             ) {
-                val title = listOfNotNull(yLabel, xLabel).joinToString(", ")
-                if (title.isNotEmpty()) {
+                if (customTooltip != null) {
+                    customTooltip(cell)
+                } else {
+                    val title = listOfNotNull(yLabel, xLabel).joinToString(", ")
+                    if (title.isNotEmpty()) {
+                        NText(
+                            text = title,
+                            size = theme.typography.fontSize.small,
+                            color = theme.colors.text3,
+                        )
+                    }
                     NText(
-                        text = title,
+                        text = valueFormatter(cell?.value ?: 0f),
                         size = theme.typography.fontSize.small,
-                        color = theme.colors.text3,
+                        color = theme.colors.text1,
+                        strong = true,
                     )
                 }
-                NText(
-                    text = valueFormatter(cell?.value ?: 0f),
-                    size = theme.typography.fontSize.small,
-                    color = theme.colors.text1,
-                    strong = true,
-                )
             }
         }
     }
@@ -316,5 +361,55 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHeatmapLabels(
                 y = 0f,
             ),
         )
+    }
+}
+
+/**
+ * Grid heatmap with optional footer and indicator slots.
+ *
+ * [colorTheme] selects one of the built-in palettes; an explicit [colorScale]
+ * takes priority. [footer] aligns left, [indicator] right below the grid.
+ */
+@Composable
+fun NHeatmap(
+    data: List<NHeatmapCell>,
+    modifier: Modifier = Modifier,
+    xLabels: List<String> = emptyList(),
+    yLabels: List<String> = emptyList(),
+    colorScale: List<Color> = emptyList(),
+    colorTheme: NHeatmapColorTheme? = null,
+    cellSize: Dp = 26.dp,
+    cellGap: Dp = 3.dp,
+    showValues: Boolean = false,
+    tooltip: Boolean = true,
+    customTooltip: (@Composable (NHeatmapCell?) -> Unit)? = null,
+    footer: (@Composable () -> Unit)? = null,
+    indicator: (@Composable () -> Unit)? = null,
+    valueFormatter: (Float) -> String = { value -> value.roundToInt().toString() },
+) {
+    Column(modifier) {
+        NHeatmapGrid(
+            data = data,
+            xLabels = xLabels,
+            yLabels = yLabels,
+            colorScale = colorScale,
+            colorTheme = colorTheme,
+            cellSize = cellSize,
+            cellGap = cellGap,
+            showValues = showValues,
+            tooltip = tooltip,
+            customTooltip = customTooltip,
+            valueFormatter = valueFormatter,
+        )
+        if (footer != null || indicator != null) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box { footer?.invoke() }
+                Box { indicator?.invoke() }
+            }
+        }
     }
 }

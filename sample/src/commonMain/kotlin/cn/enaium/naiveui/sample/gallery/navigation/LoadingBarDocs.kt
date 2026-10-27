@@ -101,7 +101,7 @@ NLoadingBarProvider {
         }
 
         DemoSection(
-            title = "Local overlay",
+            title = "Container",
             description = "A provider can be scoped to any box, so its bar does not need to cover the whole window.",
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

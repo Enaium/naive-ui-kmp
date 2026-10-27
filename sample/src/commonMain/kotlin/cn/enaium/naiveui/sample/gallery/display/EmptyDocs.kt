@@ -28,7 +28,7 @@ fun EmptyDocs() {
             }
         }
         DemoSection(
-            title = "Custom icon",
+            title = "Icon",
             description = "Replace the default icon through the icon parameter.",
             code = "NEmpty(description = \"Custom your icon\", icon = NIcons.Search)",
         ) {
@@ -48,6 +48,13 @@ fun EmptyDocs() {
                     NEmpty(size = size, description = "Size ${size.label}")
                 }
             }
+        }
+        DemoSection(
+            title = "Locale",
+            description = "Without an explicit description the localized empty description is used.",
+            code = "NEmpty()",
+        ) {
+            NEmpty()
         }
         DemoSection(
             title = "Without icon",

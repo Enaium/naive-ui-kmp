@@ -38,6 +38,7 @@ import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.internal.NCloseButton
 import cn.enaium.naiveui.internal.NScrollbar
+import cn.enaium.naiveui.internal.NVirtualList
 import cn.enaium.naiveui.internal.nBorder
 import cn.enaium.naiveui.internal.nClickable
 import cn.enaium.naiveui.theme.LocalNLocale
@@ -50,6 +51,17 @@ data class NTransferOption(
     val label: String,
     val value: String,
     val disabled: Boolean = false,
+)
+
+/**
+ * Data and actions exposed to a custom source list. [onCheck] replaces the
+ * target value, following naive-ui's `render-source-list` contract.
+ */
+class NTransferSourceListScope internal constructor(
+    val options: List<NTransferOption>,
+    val checkedValues: List<String>,
+    val pattern: String,
+    val onCheck: (List<String>) -> Unit,
 )
 
 /**
@@ -75,20 +87,24 @@ fun NTransfer(
     disabled: Boolean = false,
     size: NSize = NSize.Medium,
     heights: Dp = 300.dp,
+    virtualScroll: Boolean = false,
+    renderSourceLabel: (@Composable (NTransferOption) -> Unit)? = null,
+    renderTargetLabel: (@Composable (NTransferOption) -> Unit)? = null,
+    renderSourceList: (@Composable NTransferSourceListScope.() -> Unit)? = null,
 ) {
     val locale = LocalNLocale.current
 
-    val targetSet = value.toSet()
-    val sourceOptions = options.filter { it.value !in targetSet }
-    val targetOptions = options.filter { it.value in targetSet }
+    val targetSet = remember(value) { value.toSet() }
+    val sourceOptions = remember(options, targetSet) { options.filter { it.value !in targetSet } }
+    val targetOptions = remember(options, targetSet) { options.filter { it.value in targetSet } }
 
     var sourceChecked by remember { mutableStateOf(emptySet<String>()) }
     var targetChecked by remember { mutableStateOf(emptySet<String>()) }
     var sourcePattern by remember { mutableStateOf("") }
     var targetPattern by remember { mutableStateOf("") }
 
-    val sourceValues = sourceOptions.mapTo(mutableSetOf()) { it.value }
-    val targetValues = targetOptions.mapTo(mutableSetOf()) { it.value }
+    val sourceValues = remember(sourceOptions) { sourceOptions.mapTo(mutableSetOf()) { it.value } }
+    val targetValues = remember(targetOptions) { targetOptions.mapTo(mutableSetOf()) { it.value } }
     val effectiveSourceChecked = sourceChecked.intersect(sourceValues)
     val effectiveTargetChecked = targetChecked.intersect(targetValues)
 
@@ -98,10 +114,14 @@ fun NTransfer(
     fun matches(pattern: String, option: NTransferOption): Boolean =
         pattern.isBlank() || option.label.contains(pattern, ignoreCase = true)
 
-    val visibleSource = sourceOptions.filter { option ->
-        matches(sourcePattern, option) && (showSelected || option.value !in effectiveSourceChecked)
+    val visibleSource = remember(sourceOptions, sourcePattern, showSelected, effectiveSourceChecked) {
+        sourceOptions.filter { option ->
+            matches(sourcePattern, option) && (showSelected || option.value !in effectiveSourceChecked)
+        }
     }
-    val visibleTarget = targetOptions.filter { option -> matches(targetPattern, option) }
+    val visibleTarget = remember(targetOptions, targetPattern) {
+        targetOptions.filter { option -> matches(targetPattern, option) }
+    }
 
     fun moveCheckedToTarget() {
         if (disabled) return
@@ -144,13 +164,13 @@ fun NTransfer(
     }
 
     val language = locale
-    val selectableSource = visibleSource.filterNot { it.disabled }
-    val sourceActionLabel = if (
-        selectableSource.isNotEmpty() && selectableSource.all { it.value in effectiveSourceChecked }
-    ) {
-        language.unselectAll
-    } else {
-        language.selectAll
+    val selectableSource = remember(visibleSource) { visibleSource.filterNot { it.disabled } }
+    val sourceActionLabel = remember(selectableSource, effectiveSourceChecked) {
+        if (selectableSource.isNotEmpty() && selectableSource.all { it.value in effectiveSourceChecked }) {
+            language.unselectAll
+        } else {
+            language.selectAll
+        }
     }
 
     Row(
@@ -180,6 +200,11 @@ fun NTransfer(
             onPatternChange = { sourcePattern = it },
             disabled = disabled,
             size = size,
+            virtualScroll = virtualScroll,
+            renderLabel = renderSourceLabel,
+            customList = renderSourceList,
+            listCheckedValues = value,
+            onListCheck = { checked -> if (!disabled) onValueChange(checked.distinct()) },
         )
 
         Column(
@@ -227,6 +252,8 @@ fun NTransfer(
             onPatternChange = { targetPattern = it },
             disabled = disabled,
             size = size,
+            virtualScroll = virtualScroll,
+            renderLabel = renderTargetLabel,
         )
     }
 }
@@ -248,6 +275,11 @@ private fun NTransferPanel(
     onPatternChange: (String) -> Unit = {},
     disabled: Boolean = false,
     size: NSize = NSize.Medium,
+    virtualScroll: Boolean = false,
+    renderLabel: (@Composable (NTransferOption) -> Unit)? = null,
+    customList: (@Composable NTransferSourceListScope.() -> Unit)? = null,
+    listCheckedValues: List<String> = emptyList(),
+    onListCheck: (List<String>) -> Unit = {},
 ) {
     val theme = LocalNTheme.current
     val locale = LocalNLocale.current
@@ -313,12 +345,43 @@ private fun NTransferPanel(
         }
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (options.isEmpty()) {
+            val custom = customList
+            if (custom != null) {
+                NScrollbar(Modifier.fillMaxSize()) {
+                    custom.invoke(
+                        NTransferSourceListScope(
+                            options = options,
+                            checkedValues = listCheckedValues,
+                            pattern = pattern,
+                            onCheck = onListCheck,
+                        ),
+                    )
+                }
+            } else if (options.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     NEmpty(
                         modifier = Modifier.fillMaxWidth(),
                         description = locale.noData,
                         size = NSize.Small,
+                    )
+                }
+            } else if (virtualScroll) {
+                NVirtualList(
+                    items = options,
+                    modifier = Modifier.fillMaxSize(),
+                    itemHeight = theme.heightFor(size),
+                    itemResizable = renderLabel != null,
+                ) { option ->
+                    NTransferItem(
+                        option = option,
+                        checked = option.value in checked,
+                        showCheckbox = showCheckboxes,
+                        removable = onRemove != null,
+                        disabled = disabled,
+                        size = size,
+                        onToggle = { onToggle(option, it) },
+                        onRemove = { onRemove?.invoke(option) },
+                        renderLabel = renderLabel,
                     )
                 }
             } else {
@@ -334,6 +397,7 @@ private fun NTransferPanel(
                                 size = size,
                                 onToggle = { onToggle(option, it) },
                                 onRemove = { onRemove?.invoke(option) },
+                                renderLabel = renderLabel,
                             )
                         }
                     }
@@ -353,6 +417,7 @@ private fun NTransferItem(
     size: NSize,
     onToggle: (Boolean) -> Unit,
     onRemove: () -> Unit,
+    renderLabel: (@Composable (NTransferOption) -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
     val interaction = remember { MutableInteractionSource() }
@@ -383,14 +448,21 @@ private fun NTransferItem(
                 )
                 Spacer(Modifier.width(8.dp))
             }
-            NText(
-                text = option.label,
-                modifier = Modifier.weight(1f),
-                size = theme.typography.fontSize.of(size),
-                color = if (itemDisabled) theme.colors.textDisabled else theme.colors.text2,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            val label = renderLabel
+            if (label != null) {
+                Box(Modifier.weight(1f)) {
+                    label.invoke(option)
+                }
+            } else {
+                NText(
+                    text = option.label,
+                    modifier = Modifier.weight(1f),
+                    size = theme.typography.fontSize.of(size),
+                    color = if (itemDisabled) theme.colors.textDisabled else theme.colors.text2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (removable && !itemDisabled) {
                 NCloseButton(
                     onClick = onRemove,

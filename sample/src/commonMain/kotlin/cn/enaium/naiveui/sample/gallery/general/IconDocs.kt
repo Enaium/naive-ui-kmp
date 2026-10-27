@@ -91,7 +91,7 @@ fun IconDocs() {
         }
 
         DemoSection(
-            title = "Custom content",
+            title = "Custom icon",
             description = "The content overload accepts any composable, so custom drawings and text glyphs work.",
         ) {
             NSpace(size = 16.dp, align = NAlign.Center) {
@@ -122,7 +122,7 @@ fun IconDocs() {
         }
 
         DemoSection(
-            title = "Icon with background",
+            title = "Icon wrapper",
             description = "A rounded box behind an icon makes a compact icon button or status badge.",
         ) {
             val colors = LocalNTheme.current.colors

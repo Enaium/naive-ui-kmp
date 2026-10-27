@@ -61,7 +61,7 @@ fun LogDocs() {
             }
         }
         DemoSection(
-            title = "Scroll to latest",
+            title = "Auto bottom",
             description = "autoScrollBottom keeps the newest line visible when the log grows.",
         ) {
             var lines by remember { mutableStateOf(sampleLog(1, 10)) }

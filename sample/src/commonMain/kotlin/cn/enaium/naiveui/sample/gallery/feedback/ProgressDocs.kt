@@ -84,18 +84,34 @@ fun ProgressDocs() {
             description = "Multiple percentages render concentric rings. Use the indicator slot for center content.",
             code = "NProgress(\n    type = NProgressType.MultipleCircle,\n    percentages = listOf(50f, 25f),\n    colors = listOf(theme.colors.info, theme.colors.success),\n) { NText(\"Circle racing!\") }",
         ) {
-            NProgress(
-                type = NProgressType.MultipleCircle,
-                percentages = listOf(50f, 25f),
-                colors = listOf(theme.colors.info, theme.colors.success),
-                railColors = listOf(
-                    theme.colors.info.copy(alpha = 0.2f),
-                    theme.colors.success.copy(alpha = 0.2f),
-                ),
-                strokeWidth = 6.dp,
-                circleSize = 180.dp,
-            ) {
-                NText("Circle racing!", size = 14.sp)
+            var percentage by remember { mutableStateOf(0) }
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                NProgress(
+                    type = NProgressType.MultipleCircle,
+                    percentages = listOf(
+                        percentage.toFloat(),
+                        ((percentage + 10) % 100).toFloat(),
+                        ((percentage + 20) % 100).toFloat(),
+                        ((percentage + 30) % 100).toFloat(),
+                    ),
+                    colors = listOf(
+                        theme.colors.info,
+                        theme.colors.success,
+                        theme.colors.warning,
+                        theme.colors.error,
+                    ),
+                    railColors = listOf(
+                        theme.colors.info.copy(alpha = 0.2f),
+                        theme.colors.success.copy(alpha = 0.2f),
+                        theme.colors.warning.copy(alpha = 0.2f),
+                        theme.colors.error.copy(alpha = 0.2f),
+                    ),
+                    strokeWidth = 6.dp,
+                    circleSize = 180.dp,
+                ) {
+                    NText("Circle racing!", size = 14.sp)
+                }
+                PercentageButtons(percentage) { percentage = it }
             }
         }
         DemoSection(

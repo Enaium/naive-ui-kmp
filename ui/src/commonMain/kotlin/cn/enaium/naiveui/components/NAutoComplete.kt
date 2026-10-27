@@ -30,6 +30,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.internal.NBaseLoading
@@ -44,12 +45,18 @@ import cn.enaium.naiveui.theme.NSize
 import cn.enaium.naiveui.theme.NStatus
 import cn.enaium.naiveui.theme.nSize
 
-/** One autocomplete suggestion. */
+/**
+ * One autocomplete suggestion.
+ *
+ * [group] renders a group header when the previous option belongs to another
+ * group, mirroring the group options supported by naive-ui.
+ */
 @Immutable
 data class NAutoCompleteOption(
     val label: String,
     val value: String = label,
     val disabled: Boolean = false,
+    val group: String? = null,
 )
 
 /**
@@ -72,11 +79,18 @@ fun NAutoComplete(
     clearable: Boolean = false,
     loading: Boolean = false,
     filterable: Boolean = true,
+    clearAfterSelect: Boolean = false,
+    blurAfterSelect: Boolean = false,
+    append: Boolean = false,
+    showOptionsWhen: ((String) -> Boolean)? = null,
+    renderOption: (@Composable (NAutoCompleteOption) -> Unit)? = null,
+    customInput: (@Composable (String, (String) -> Unit, () -> Unit, () -> Unit) -> Unit)? = null,
     onSelect: ((String) -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
     val resolvedSize = nSize(size)
     val density = LocalDensity.current
+    val focusManager = LocalFocusManager.current
     var focused by remember { mutableStateOf(false) }
     var dismissed by remember { mutableStateOf(false) }
     var suppressed by remember { mutableStateOf(false) }
@@ -90,16 +104,33 @@ fun NAutoComplete(
     } else {
         options
     }
-    val visible = focused && !dismissed && !suppressed && !disabled && (filtered.isNotEmpty() || loading)
+    val showByValue = showOptionsWhen?.invoke(value) ?: true
+    val visible = focused && !dismissed && !suppressed && !disabled && showByValue &&
+        (filtered.isNotEmpty() || loading)
 
     LaunchedEffect(filtered) { highlighted = 0 }
 
     fun choose(option: NAutoCompleteOption) {
         if (option.disabled) return
+        val next = when {
+            clearAfterSelect -> ""
+            append -> value + option.value
+            else -> option.value
+        }
         suppressed = true
-        onValueChange(option.value)
-        onSelect?.invoke(option.value)
         dismissed = true
+        onValueChange(next)
+        onSelect?.invoke(option.value)
+        if (blurAfterSelect) {
+            focused = false
+            focusManager.clearFocus()
+        }
+    }
+
+    fun handleInput(next: String) {
+        dismissed = false
+        suppressed = false
+        onValueChange(next)
     }
 
     Box(
@@ -130,26 +161,35 @@ fun NAutoComplete(
                 }
             },
     ) {
-        NInput(
-            value = value,
-            onValueChange = {
-                dismissed = false
-                suppressed = false
-                onValueChange(it)
-            },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = placeholder,
-            disabled = disabled,
-            clearable = clearable,
-            size = size,
-            status = status,
-            loading = loading,
-            onFocus = {
-                focused = true
-                dismissed = false
-            },
-            onBlur = { focused = false },
-        )
+        val custom = customInput
+        if (custom != null) {
+            custom(
+                value,
+                { next -> handleInput(next) },
+                {
+                    focused = true
+                    dismissed = false
+                },
+                { focused = false },
+            )
+        } else {
+            NInput(
+                value = value,
+                onValueChange = { handleInput(it) },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = placeholder,
+                disabled = disabled,
+                clearable = clearable,
+                size = size,
+                status = status,
+                loading = loading,
+                onFocus = {
+                    focused = true
+                    dismissed = false
+                },
+                onBlur = { focused = false },
+            )
+        }
         NPopoverSurface(
             visible = visible,
             onDismiss = { dismissed = true },
@@ -174,7 +214,21 @@ fun NAutoComplete(
                             )
                         }
                     }
+                    var lastGroup: String? = null
                     filtered.forEachIndexed { index, option ->
+                        val group = option.group
+                        if (group != null && group != lastGroup) {
+                            lastGroup = group
+                            Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                                NBaseText(
+                                    text = group,
+                                    style = theme.typography.style(
+                                        theme.fontSizeFor(resolvedSize) * 0.86f,
+                                        color = theme.colors.text3,
+                                    ),
+                                )
+                            }
+                        }
                         val interaction = remember(option) { MutableInteractionSource() }
                         val hovered by interaction.collectIsHoveredAsState()
                         val selected = index == highlighted
@@ -192,13 +246,18 @@ fun NAutoComplete(
                                 .nClickable(interaction, enabled = !option.disabled) { choose(option) }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
-                            NBaseText(
-                                text = option.label,
-                                style = theme.typography.style(
-                                    theme.fontSizeFor(resolvedSize),
-                                    color = if (option.disabled) theme.colors.textDisabled else theme.colors.text2,
-                                ),
-                            )
+                            val render = renderOption
+                            if (render != null) {
+                                render(option)
+                            } else {
+                                NBaseText(
+                                    text = option.label,
+                                    style = theme.typography.style(
+                                        theme.fontSizeFor(resolvedSize),
+                                        color = if (option.disabled) theme.colors.textDisabled else theme.colors.text2,
+                                    ),
+                                )
+                            }
                         }
                     }
                 }

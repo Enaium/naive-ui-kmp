@@ -80,6 +80,8 @@ fun NAnchor(
     type: NAnchorType = NAnchorType.Rail,
     showRail: Boolean = true,
     showBackground: Boolean = true,
+    ignoreGap: Boolean = false,
+    bound: Dp = 12.dp,
     affix: Boolean = false,
     scrollState: ScrollState? = null,
     content: @Composable () -> Unit = {},
@@ -142,9 +144,10 @@ fun NAnchor(
                 val density = LocalDensity.current
                 val activeBounds = anchorBounds?.let { anchor ->
                     rect?.let { link ->
-                        val top = with(density) { (link.top - anchor.top).toDp() }
-                        val height = with(density) { link.height.toDp() }
-                        top to height
+                        val gap = if (ignoreGap) 0f else with(density) { bound.toPx() }
+                        val topPx = (link.top - anchor.top - gap).coerceAtLeast(0f)
+                        val heightPx = link.height + gap * 2
+                        with(density) { topPx.toDp() } to with(density) { heightPx.toDp() }
                     }
                 }
                 val top by animateDpAsState(

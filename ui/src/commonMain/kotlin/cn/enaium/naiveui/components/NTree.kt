@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -34,6 +36,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -62,10 +65,17 @@ data class NTreeOption(
     val key: String,
     val children: List<NTreeOption>? = null,
     val disabled: Boolean = false,
+    val checkboxDisabled: Boolean = false,
     val isLeaf: Boolean? = null,
     val prefix: (@Composable () -> Unit)? = null,
     val suffix: (@Composable () -> Unit)? = null,
 )
+
+/** Where the checkbox is rendered inside a tree row. */
+enum class NTreeCheckboxPlacement { Left, Right }
+
+/** Behavior applied when a tree node is clicked. */
+enum class NTreeClickBehavior { Default, ToggleExpand, ToggleSelect, ToggleCheck, None }
 
 /** Where a dragged tree node is dropped relative to the hovered node. */
 enum class NTreeDropPosition { Before, Inside, After }
@@ -95,25 +105,34 @@ fun NTree(
     defaultExpandedKeys: List<String> = emptyList(),
     checkedKeys: List<String>? = null,
     defaultCheckedKeys: List<String> = emptyList(),
+    pattern: String = "",
+    filter: ((String, NTreeOption) -> Boolean)? = null,
+    showIrrelevantNodes: Boolean = true,
     onUpdateSelectedKeys: ((List<String>) -> Unit)? = null,
     onUpdateExpandedKeys: ((List<String>) -> Unit)? = null,
     onUpdateCheckedKeys: ((List<String>) -> Unit)? = null,
+    onNodeClick: ((NTreeOption) -> Unit)? = null,
+    overrideClickBehavior: ((NTreeOption) -> NTreeClickBehavior)? = null,
     selectable: Boolean = true,
     checkable: Boolean = false,
     cascade: Boolean = false,
     multiple: Boolean = false,
+    checkboxPlacement: NTreeCheckboxPlacement = NTreeCheckboxPlacement.Left,
     blockLine: Boolean = false,
     showLine: Boolean = false,
     indent: Dp = 24.dp,
     expandOnClick: Boolean = false,
     defaultExpandAll: Boolean = false,
     virtualScroll: Boolean = false,
+    virtualScrollState: LazyListState? = null,
     draggable: Boolean = false,
     disabled: Boolean = false,
     onLoad: (suspend (NTreeOption) -> List<NTreeOption>?)? = null,
     onDrop: ((NTreeDropInfo) -> Unit)? = null,
+    renderPrefix: (@Composable (NTreeOption, Boolean, Boolean) -> Unit)? = null,
     renderLabel: (@Composable (NTreeOption, Boolean, Boolean) -> Unit)? = null,
     renderSuffix: (@Composable (NTreeOption, Boolean, Boolean) -> Unit)? = null,
+    renderSwitcherIcon: (@Composable (NTreeOption, Boolean, Boolean) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val theme = LocalNTheme.current
@@ -164,6 +183,39 @@ fun NTree(
         }
     }
     collect(data, null)
+
+    val filterActive = pattern.isNotEmpty()
+    val matchedKeys = HashSet<String>()
+    val filterExpandedKeys = HashSet<String>()
+    if (filterActive) {
+        val predicate = filter ?: { p, node -> node.label.contains(p, ignoreCase = true) }
+        fun mark(nodes: List<NTreeOption>, ancestors: List<String>) {
+            nodes.forEach { node ->
+                if (predicate(pattern, node)) {
+                    matchedKeys.add(node.key)
+                    filterExpandedKeys.addAll(ancestors)
+                }
+                mark(childMap[node.key].orEmpty(), ancestors + node.key)
+            }
+        }
+        mark(data, emptyList())
+    }
+
+    fun filteredNodes(nodes: List<NTreeOption>, insideMatched: Boolean): List<NTreeOption> =
+        nodes.mapNotNull { node ->
+            val matched = node.key in matchedKeys
+            if (!insideMatched && !matched && node.key !in filterExpandedKeys) {
+                return@mapNotNull null
+            }
+            val children = childMap[node.key].orEmpty()
+            if (children.isEmpty()) {
+                node
+            } else {
+                node.copy(children = filteredNodes(children, insideMatched || matched))
+            }
+        }
+
+    val displayData = if (filterActive && !showIrrelevantNodes) filteredNodes(data, false) else data
 
     fun subtreeKeys(node: NTreeOption): List<String> =
         listOf(node.key) + childMap[node.key].orEmpty().flatMap { subtreeKeys(it) }
@@ -262,7 +314,8 @@ fun NTree(
             val loaded = loadedChildren.containsKey(node.key)
             val expandable = node.isLeaf != true &&
                 (children.isNotEmpty() || (node.isLeaf == false && !loaded))
-            val expanded = node.key in mergedExpanded && children.isNotEmpty()
+            val expanded = (node.key in mergedExpanded || node.key in filterExpandedKeys) &&
+                children.isNotEmpty()
             result.add(
                 NTreeRowData(
                     option = node,
@@ -279,7 +332,7 @@ fun NTree(
         return result
     }
 
-    val rows = flatten(data, emptyList())
+    val rows = flatten(displayData, emptyList())
     val rowHeightPx = with(density) { 34.dp.toPx() }
 
     fun clearDrag() {
@@ -364,17 +417,26 @@ fun NTree(
                 selected = option.key in selectedSet,
                 checked = option.key in checkedSet,
                 indeterminate = option.key in indeterminateKeys,
+                highlight = option.key in matchedKeys,
                 nodeDisabled = nodeDisabled,
+                checkboxDisabled = option.checkboxDisabled,
                 blockLine = blockLine,
                 showLine = showLine,
                 indent = indent,
                 checkable = checkable,
+                checkboxPlacement = checkboxPlacement,
                 onToggleExpand = { toggleExpand(option) },
                 onToggleCheck = { toggleCheck(option) },
                 onSelect = { selectNode(option) },
+                onNodeClick = { onNodeClick?.invoke(option) },
+                resolveClickBehavior = {
+                    overrideClickBehavior?.invoke(option) ?: NTreeClickBehavior.Default
+                },
                 expandOnClick = expandOnClick,
+                renderPrefix = renderPrefix,
                 renderLabel = renderLabel,
                 renderSuffix = renderSuffix,
+                renderSwitcherIcon = renderSwitcherIcon,
             )
         }
     }
@@ -382,10 +444,12 @@ fun NTree(
     Box(modifier) {
         when {
             virtualScroll -> {
+                val listState = virtualScrollState ?: rememberLazyListState()
                 NVirtualList(
                     rows,
                     Modifier.fillMaxWidth().height(height ?: 300.dp),
                     itemHeight = 34.dp,
+                    state = listState,
                 ) { row -> renderRow(row) }
             }
             height != null -> {
@@ -423,17 +487,24 @@ private fun NTreeRow(
     selected: Boolean,
     checked: Boolean,
     indeterminate: Boolean,
+    highlight: Boolean,
     nodeDisabled: Boolean,
+    checkboxDisabled: Boolean,
     blockLine: Boolean,
     showLine: Boolean,
     indent: Dp,
     checkable: Boolean,
+    checkboxPlacement: NTreeCheckboxPlacement,
     onToggleExpand: () -> Unit,
     onToggleCheck: () -> Unit,
     onSelect: () -> Unit,
+    onNodeClick: () -> Unit,
+    resolveClickBehavior: () -> NTreeClickBehavior,
     expandOnClick: Boolean,
+    renderPrefix: (@Composable (NTreeOption, Boolean, Boolean) -> Unit)?,
     renderLabel: (@Composable (NTreeOption, Boolean, Boolean) -> Unit)?,
     renderSuffix: (@Composable (NTreeOption, Boolean, Boolean) -> Unit)?,
+    renderSwitcherIcon: (@Composable (NTreeOption, Boolean, Boolean) -> Unit)?,
 ) {
     val theme = LocalNTheme.current
     val rowInteraction = remember { MutableInteractionSource() }
@@ -454,11 +525,23 @@ private fun NTreeRow(
         selected -> theme.colors.primary
         else -> theme.colors.text2
     }
-    val textStyle = theme.typography.body.copy(color = textColor)
+    val textStyle = theme.typography.body.copy(
+        color = textColor,
+        textDecoration = if (highlight) TextDecoration.Underline else null,
+    )
     val onClick = {
+        onNodeClick()
         if (!nodeDisabled) {
-            onSelect()
-            if (expandOnClick && expandable) onToggleExpand()
+            when (resolveClickBehavior()) {
+                NTreeClickBehavior.Default -> {
+                    onSelect()
+                    if (expandOnClick && expandable) onToggleExpand()
+                }
+                NTreeClickBehavior.ToggleExpand -> if (expandable) onToggleExpand()
+                NTreeClickBehavior.ToggleSelect -> onSelect()
+                NTreeClickBehavior.ToggleCheck -> if (checkable) onToggleCheck()
+                NTreeClickBehavior.None -> Unit
+            }
         }
     }
 
@@ -471,7 +554,7 @@ private fun NTreeRow(
             .hoverable(rowInteraction)
             .then(
                 if (blockLine) {
-                    Modifier.nClickable(rowInteraction, enabled = !nodeDisabled, onClick = onClick)
+                    Modifier.nClickable(rowInteraction, onClick = onClick)
                 } else {
                     Modifier
                 },
@@ -496,20 +579,24 @@ private fun NTreeRow(
                         .nClickable(rowInteraction, enabled = !nodeDisabled, onClick = onToggleExpand),
                     contentAlignment = Alignment.Center,
                 ) {
-                    NIcon(
-                        NIcons.ChevronRight,
-                        Modifier.rotate(if (expanded) 90f else 0f),
-                        size = 14.dp,
-                        color = if (selected) theme.colors.primary else theme.colors.icon,
-                    )
+                    if (renderSwitcherIcon != null) {
+                        renderSwitcherIcon(option, expanded, selected)
+                    } else {
+                        NIcon(
+                            NIcons.ChevronRight,
+                            Modifier.rotate(if (expanded) 90f else 0f),
+                            size = 14.dp,
+                            color = if (selected) theme.colors.primary else theme.colors.icon,
+                        )
+                    }
                 }
             }
         }
-        if (checkable) {
+        if (checkable && checkboxPlacement == NTreeCheckboxPlacement.Left) {
             NTreeCheckbox(
                 checked = checked,
                 indeterminate = indeterminate,
-                disabled = nodeDisabled,
+                disabled = nodeDisabled || checkboxDisabled,
                 onCheckedChange = onToggleCheck,
             )
             Spacer(Modifier.width(8.dp))
@@ -524,7 +611,7 @@ private fun NTreeRow(
                 .hoverable(contentInteraction)
                 .then(
                     if (!blockLine) {
-                        Modifier.nClickable(contentInteraction, enabled = !nodeDisabled, onClick = onClick)
+                        Modifier.nClickable(contentInteraction, onClick = onClick)
                     } else {
                         Modifier
                     },
@@ -533,9 +620,15 @@ private fun NTreeRow(
             contentAlignment = Alignment.CenterStart,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val prefix = option.prefix
-                if (prefix != null) {
-                    Box(Modifier.padding(end = 8.dp)) { prefix() }
+                if (renderPrefix != null) {
+                    Box(Modifier.padding(end = 8.dp)) {
+                        renderPrefix(option, selected, checked)
+                    }
+                } else {
+                    val prefix = option.prefix
+                    if (prefix != null) {
+                        Box(Modifier.padding(end = 8.dp)) { prefix() }
+                    }
                 }
                 Box(Modifier.weight(1f, fill = false)) {
                     if (renderLabel != null) {
@@ -558,6 +651,16 @@ private fun NTreeRow(
                     suffix()
                 }
             }
+        }
+        if (checkable && checkboxPlacement == NTreeCheckboxPlacement.Right) {
+            Spacer(Modifier.width(8.dp))
+            NTreeCheckbox(
+                checked = checked,
+                indeterminate = indeterminate,
+                disabled = nodeDisabled || checkboxDisabled,
+                onCheckedChange = onToggleCheck,
+            )
+            Spacer(Modifier.width(6.dp))
         }
     }
 }

@@ -11,6 +11,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import cn.enaium.naiveui.icons.NIcon
+import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.components.NRate
 import cn.enaium.naiveui.components.NRatePrecise
 import cn.enaium.naiveui.components.NText
@@ -66,6 +68,33 @@ NRate(value, { value = it }, color = Color(0xFF4FB233))
         ) {
             var value by remember { mutableStateOf(3) }
             NRate(value, { value = it }, color = Color(0xFF4FB233))
+        }
+
+        DemoSection(
+            title = "Icon",
+            description = "Provide a custom icon slot; it receives the star index and whether it is active.",
+            code = """
+NRate(
+    value, { value = it },
+    icon = { _, active ->
+        NIcon(NIcons.Success, size = 16.dp, color = if (active) Color(0xFF18A058) else Color(0xFFBDBDBD))
+    },
+)
+""",
+        ) {
+            var value by remember { mutableStateOf(3) }
+            NRate(
+                value,
+                { value = it },
+                size = NSize.Large,
+                icon = { _, active ->
+                    NIcon(
+                        NIcons.Success,
+                        size = 18.dp,
+                        color = if (active) Color(0xFF18A058) else Color(0xFFBDBDBD),
+                    )
+                },
+            )
         }
 
         DemoSection(

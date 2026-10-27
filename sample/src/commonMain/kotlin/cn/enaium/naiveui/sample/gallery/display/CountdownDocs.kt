@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.components.NSwitch
 import cn.enaium.naiveui.components.NCountdown
+import cn.enaium.naiveui.components.NStatistic
 import cn.enaium.naiveui.components.rememberNCountdownState
 import cn.enaium.naiveui.components.NButton
 import cn.enaium.naiveui.components.NText
@@ -69,12 +70,89 @@ NCountdown(duration = 3_600_000, precision = 3)
         }
 
         DemoSection(
-            title = "Finish and reset",
-            description = "onFinish runs once when the timer reaches zero. Call state.reset() to start over.",
+            title = "Render",
+            description = "format maps the time parts to a string; render replaces the text entirely with composable content.",
+            code = """
+NCountdown(
+    duration = 996_000,
+    active = active,
+    format = { info -> info.minutes.toString() + "m " + info.seconds + "s" },
+)
+NCountdown(
+    duration = 996_000,
+    active = active,
+    render = { info ->
+        NText(countdownPart(info.hours) + ":" + countdownPart(info.minutes))
+    },
+)
+""",
+        ) {
+            var active by remember { mutableStateOf(false) }
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                NStatistic(
+                    label = "I'm free to be whatever I",
+                    tabularNumbers = true,
+                    content = {
+                        NCountdown(
+                            duration = 996_000L,
+                            active = active,
+                            render = { info ->
+                                NText(
+                                    countdownPart(info.hours) + ":" +
+                                        countdownPart(info.minutes) + ":" +
+                                        countdownPart(info.seconds),
+                                )
+                            },
+                        )
+                    },
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    NCountdown(
+                        duration = 996_000L,
+                        active = active,
+                        format = { info -> "${info.minutes}m ${info.seconds}s" },
+                    )
+                    NSwitch(checked = active, onCheckedChange = { active = it })
+                }
+            }
+        }
+
+        DemoSection(
+            title = "Reset",
+            description = "Keep a countdown state and call reset() to start the timer again from its duration.",
             code = """
 val state = rememberNCountdownState()
-var finished by remember { mutableStateOf(false) }
 var active by remember { mutableStateOf(true) }
+
+Row {
+    NCountdown(duration = 86_400_000, active = active, state = state)
+    NButton(size = NSize.Tiny, onClick = { state.reset() }) { NText("Reset") }
+    NSwitch(checked = active, onCheckedChange = { active = it })
+}
+""",
+        ) {
+            val state = rememberNCountdownState()
+            var active by remember { mutableStateOf(true) }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NCountdown(duration = 86_400_000L, active = active, state = state)
+                NButton(size = NSize.Tiny, onClick = { state.reset() }) { NText("Reset") }
+                NSwitch(checked = active, onCheckedChange = { active = it })
+            }
+        }
+
+        DemoSection(
+            title = "Finish",
+            description = "onFinish runs once when the timer reaches zero. Reset the state to run it again.",
+            code = """
+val state = rememberNCountdownState()
+var active by remember { mutableStateOf(true) }
+var finished by remember { mutableStateOf(false) }
 
 NCountdown(
     duration = 3000,
@@ -85,12 +163,12 @@ NCountdown(
 NButton(onClick = {
     state.reset()
     finished = false
-}) { NText("Reset") }
+}) { NText("Restart") }
 """,
         ) {
             val state = rememberNCountdownState()
-            var finished by remember { mutableStateOf(false) }
             var active by remember { mutableStateOf(true) }
+            var finished by remember { mutableStateOf(false) }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -108,41 +186,11 @@ NButton(onClick = {
                         state.reset()
                         finished = false
                     },
-                ) { NText("Reset") }
+                ) { NText("Restart") }
                 NSwitch(checked = active, onCheckedChange = { active = it })
-            }
-        }
-
-        DemoSection(
-            title = "Custom rendering",
-            description = "format maps the time parts to a string; render replaces the text entirely with composable content.",
-            code = """
-NCountdown(
-    duration = 996_000,
-    active = true,
-    format = { info -> info.minutes.toString() + "m " + info.seconds + "s" },
-)
-NCountdown(
-    duration = 5_000,
-    active = true,
-    render = { info -> NText(info.days.toString() + "d " + info.hours + "h") },
-)
-""",
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                NCountdown(
-                    duration = 996_000L,
-                    active = true,
-                    format = { info -> "${info.minutes}m ${info.seconds}s" },
-                )
-                NCountdown(
-                    duration = 5_000L,
-                    active = true,
-                    render = { info ->
-                        NText("${info.days}d ${info.hours}h ${info.minutes}m ${info.seconds}s")
-                    },
-                )
             }
         }
     }
 }
+
+private fun countdownPart(value: Int): String = value.toString().padStart(2, '0')

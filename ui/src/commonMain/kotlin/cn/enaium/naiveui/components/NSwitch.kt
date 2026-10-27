@@ -79,6 +79,9 @@ fun NSwitch(
     icon: (@Composable () -> Unit)? = null,
     checkedIcon: (@Composable () -> Unit)? = null,
     uncheckedIcon: (@Composable () -> Unit)? = null,
+    checkedValue: Any = true,
+    uncheckedValue: Any = false,
+    onValueChange: ((Any) -> Unit)? = null,
 ) {
     val theme = LocalNTheme.current
     val colors = theme.colors
@@ -115,7 +118,9 @@ fun NSwitch(
                 enabled = enabled,
                 role = Role.Switch,
             ) {
-                onCheckedChange?.invoke(!checked)
+                val next = !checked
+                onValueChange?.invoke(if (next) checkedValue else uncheckedValue)
+                onCheckedChange?.invoke(next)
             }
             .then(if (disabled) Modifier.alpha(theme.opacityDisabled) else Modifier),
         verticalAlignment = Alignment.CenterVertically,

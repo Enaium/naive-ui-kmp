@@ -24,6 +24,9 @@ import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.components.NCascader
 import cn.enaium.naiveui.components.NCascaderOption
 import cn.enaium.naiveui.components.NDatePicker
+import cn.enaium.naiveui.components.NDateTimeRangePicker
+import cn.enaium.naiveui.components.rememberNDatePickerController
+import cn.enaium.naiveui.components.NDrawer
 import cn.enaium.naiveui.components.NTimePicker
 import cn.enaium.naiveui.components.NTreeSelect
 import cn.enaium.naiveui.components.NTreeSelectOption
@@ -36,6 +39,7 @@ import cn.enaium.naiveui.components.NDropdownOption
 import cn.enaium.naiveui.components.NModalPreset
 import cn.enaium.naiveui.components.NButton
 import cn.enaium.naiveui.components.NText
+import cn.enaium.naiveui.sample.gallery.feedback.DrawerDocs
 import cn.enaium.naiveui.internal.NTrigger
 import cn.enaium.naiveui.theme.NConfigProvider
 import cn.enaium.naiveui.theme.NLocales
@@ -43,6 +47,7 @@ import cn.enaium.naiveui.theme.NGlobalStyle
 import java.io.File
 import kotlin.test.Test
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Image
@@ -76,6 +81,31 @@ class OverlayScreenshotTest {
         onNodeWithText("2024-05-20").performClick()
         waitForIdle()
         capture("overlay-date-picker.png")
+    }
+
+    @Test
+    fun dateTimePopup() = runComposeUiTest {
+        var value by mutableStateOf<LocalDateTime?>(LocalDateTime(2007, 6, 30, 0, 41, 0))
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(40.dp)) {
+                        val controller = rememberNDatePickerController()
+                        androidx.compose.runtime.LaunchedEffect(Unit) { controller.focus() }
+                        NDatePicker(
+                            value = value,
+                            onValueChange = { value = it },
+                            controller = controller,
+                        )
+                    }
+                }
+            }
+        }
+        waitForIdle()
+        capture("overlay-date-time.png")
+        onNodeWithText("00:41:00").performClick()
+        waitUntil { onAllNodesWithText("Now").fetchSemanticsNodes().isNotEmpty() }
+        capture("overlay-date-time-time-picker.png")
     }
 
     @Test
@@ -201,6 +231,71 @@ class OverlayScreenshotTest {
         waitForIdle()
         capture("language-dropdown-end.png")
         onNodeWithText(last.displayName).assertExists()
+    }
+
+    @Test
+    fun dateTimeRangePopup() = runComposeUiTest {
+        var value by mutableStateOf(
+            LocalDateTime(2007, 6, 30, 0, 41) to LocalDateTime(2026, 10, 27, 23, 47, 50),
+        )
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(20.dp)) {
+                        val controller = rememberNDatePickerController()
+                        androidx.compose.runtime.LaunchedEffect(Unit) { controller.focus() }
+                        NDateTimeRangePicker(
+                            value = value,
+                            onValueChange = { value = it ?: value },
+                            controller = controller,
+                        )
+                    }
+                }
+            }
+        }
+        waitForIdle()
+        capture("date-time-range.png")
+        onNodeWithText("00:41:00").performClick()
+        waitForIdle()
+        capture("date-time-range-after-time-click.png")
+        waitUntil { onAllNodesWithText("Now").fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithText("Now").assertExists()
+        capture("date-time-range-time-picker.png")
+    }
+
+    @Test
+    fun drawerSurface() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    NDrawer(
+                        show = true,
+                        onUpdateShow = {},
+                        title = "Stoner",
+                        width = 502.dp,
+                    ) {
+                        NText(
+                            "Stoner is a 1965 novel by the American writer John Williams. " +
+                                "It was reissued in 2003 and again in 2006.",
+                        )
+                    }
+                }
+            }
+        }
+        waitForIdle()
+        capture("drawer-surface.png")
+    }
+
+    @Test
+    fun drawerDocsBasic() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle { DrawerDocs() }
+            }
+        }
+        onAllNodesWithText("Right")[0].performClick()
+        waitForIdle()
+        capture("drawer-docs-basic.png")
     }
 
     @Test

@@ -59,6 +59,7 @@ sealed interface NDropdownOption {
         val icon: ImageVector? = null,
         val extra: String? = null,
         val children: List<NDropdownOption> = emptyList(),
+        val onClick: (() -> Unit)? = null,
     ) : NDropdownOption
 
     /** A horizontal separator. */
@@ -73,13 +74,27 @@ sealed interface NDropdownOption {
 
     /** A non-selectable header. */
     data class Header(override val key: String, val label: String) : NDropdownOption
+
+    /** Arbitrary content rendered inline in the menu. */
+    data class Content(
+        override val key: String,
+        val content: @Composable () -> Unit,
+    ) : NDropdownOption
 }
+
+private class DropdownRenderers(
+    val size: NSize,
+    val renderLabel: (@Composable (NDropdownOption) -> Unit)?,
+    val renderIcon: (@Composable (NDropdownOption.Label) -> Unit)?,
+    val optionWrapper: (@Composable (NDropdownOption.Label, @Composable () -> Unit) -> Unit)?,
+    val onSelect: (String) -> Unit,
+)
 
 /**
  * A menu anchored to [content].
  *
- * Supports hover, click and manual triggering, grouped options, dividers and
- * cascading submenus.
+ * Supports hover, click and manual triggering, grouped options, dividers,
+ * custom labels/icons, nested submenus and manual popup offsets.
  */
 @Composable
 fun NDropdown(
@@ -92,6 +107,10 @@ fun NDropdown(
     size: NSize = NSize.Medium,
     show: Boolean? = null,
     onShowChange: ((Boolean) -> Unit)? = null,
+    offset: IntOffset = IntOffset(0, 6),
+    renderLabel: (@Composable (NDropdownOption) -> Unit)? = null,
+    renderIcon: (@Composable (NDropdownOption.Label) -> Unit)? = null,
+    optionWrapper: (@Composable (NDropdownOption.Label, @Composable () -> Unit) -> Unit)? = null,
     onSelect: (String) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
@@ -119,6 +138,17 @@ fun NDropdown(
         }
     }
 
+    val renderers = DropdownRenderers(
+        size = size,
+        renderLabel = renderLabel,
+        renderIcon = renderIcon,
+        optionWrapper = optionWrapper,
+        onSelect = { key ->
+            updateShow(false)
+            onSelect(key)
+        },
+    )
+
     Box(
         modifier
             .hoverable(interaction, enabled = !disabled)
@@ -131,20 +161,16 @@ fun NDropdown(
             visible = visible,
             onDismiss = { updateShow(false) },
             placement = placement,
-            offset = IntOffset(0, 6),
+            offset = offset,
             focusable = trigger != NTrigger.Hover,
             dismissOnClickOutside = true,
             padding = PaddingValues(0.dp),
         ) {
             DropdownMenuPanel(
                 options = options,
-                size = size,
+                renderers = renderers,
                 showArrow = showArrow,
                 placement = placement,
-                onSelect = { key ->
-                    updateShow(false)
-                    onSelect(key)
-                },
             )
         }
     }
@@ -153,10 +179,9 @@ fun NDropdown(
 @Composable
 private fun DropdownMenuPanel(
     options: List<NDropdownOption>,
-    size: NSize,
+    renderers: DropdownRenderers,
     showArrow: Boolean,
     placement: NPlacement,
-    onSelect: (String) -> Unit,
 ) {
     val theme = LocalNTheme.current
     val arrowAtTop = placement == NPlacement.Bottom ||
@@ -176,7 +201,7 @@ private fun DropdownMenuPanel(
                 DropdownArrow(pointsUp = true)
             }
             Column(Modifier.padding(vertical = 4.dp)) {
-                DropdownMenuContent(options, size, onSelect)
+                DropdownMenuContent(options, renderers)
             }
             if (showArrow && arrowAtBottom) {
                 DropdownArrow(pointsUp = false)
@@ -188,8 +213,7 @@ private fun DropdownMenuPanel(
 @Composable
 private fun DropdownMenuContent(
     options: List<NDropdownOption>,
-    size: NSize,
-    onSelect: (String) -> Unit,
+    renderers: DropdownRenderers,
 ) {
     val theme = LocalNTheme.current
     NScrollbar(Modifier.heightIn(max = 360.dp), alwaysShow = true) {
@@ -201,31 +225,16 @@ private fun DropdownMenuContent(
         ) {
             options.forEach { option ->
                 when (option) {
-                    is NDropdownOption.Divider -> Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .height(1.dp)
-                            .background(theme.colors.divider),
-                    )
-                    is NDropdownOption.Header -> NText(
-                        text = option.label,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        color = theme.colors.text3,
-                        size = 12.sp,
-                    )
+                    is NDropdownOption.Divider -> MenuDivider(theme)
+                    is NDropdownOption.Content -> option.content()
+                    is NDropdownOption.Header -> MenuGroupLabel(option.label, renderers, option)
                     is NDropdownOption.Group -> {
-                        NText(
-                            text = option.label,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            color = theme.colors.text3,
-                            size = 12.sp,
-                        )
+                        MenuGroupLabel(option.label, renderers, option)
                         option.children.forEach { child ->
-                            DropdownOptionRow(child, size, onSelect)
+                            DropdownOptionRow(child, renderers)
                         }
                     }
-                    is NDropdownOption.Label -> DropdownOptionRow(option, size, onSelect)
+                    is NDropdownOption.Label -> DropdownOptionRow(option, renderers)
                 }
             }
         }
@@ -233,50 +242,60 @@ private fun DropdownMenuContent(
 }
 
 @Composable
+private fun MenuGroupLabel(
+    label: String,
+    renderers: DropdownRenderers,
+    option: NDropdownOption,
+) {
+    val theme = LocalNTheme.current
+    val custom = renderers.renderLabel
+    if (custom != null) {
+        Box(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            custom(option)
+        }
+    } else {
+        NText(
+            text = label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            color = theme.colors.text3,
+            size = 12.sp,
+        )
+    }
+}
+
+@Composable
+private fun MenuDivider(theme: cn.enaium.naiveui.theme.NTheme) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .height(1.dp)
+            .background(theme.colors.divider),
+    )
+}
+
+@Composable
 private fun DropdownOptionRow(
     option: NDropdownOption,
-    size: NSize,
-    onSelect: (String) -> Unit,
+    renderers: DropdownRenderers,
 ) {
+    val theme = LocalNTheme.current
     when (option) {
-        is NDropdownOption.Divider -> {
-            val theme = LocalNTheme.current
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .height(1.dp)
-                    .background(theme.colors.divider),
-            )
-        }
-        is NDropdownOption.Header -> {
-            val theme = LocalNTheme.current
-            NText(
-                text = option.label,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                color = theme.colors.text3,
-                size = 12.sp,
-            )
-        }
+        is NDropdownOption.Divider -> MenuDivider(theme)
+        is NDropdownOption.Content -> option.content()
+        is NDropdownOption.Header -> MenuGroupLabel(option.label, renderers, option)
         is NDropdownOption.Group -> {
-            val theme = LocalNTheme.current
-            NText(
-                text = option.label,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                color = theme.colors.text3,
-                size = 12.sp,
-            )
-            option.children.forEach { child -> DropdownOptionRow(child, size, onSelect) }
+            MenuGroupLabel(option.label, renderers, option)
+            option.children.forEach { child -> DropdownOptionRow(child, renderers) }
         }
-        is NDropdownOption.Label -> DropdownLabelRow(option, size, onSelect)
+        is NDropdownOption.Label -> DropdownLabelRow(option, renderers)
     }
 }
 
 @Composable
 private fun DropdownLabelRow(
     option: NDropdownOption.Label,
-    size: NSize,
-    onSelect: (String) -> Unit,
+    renderers: DropdownRenderers,
 ) {
     val theme = LocalNTheme.current
     val interaction = remember { MutableInteractionSource() }
@@ -285,8 +304,6 @@ private fun DropdownLabelRow(
     var submenuHovered by remember { mutableStateOf(false) }
     val hasChildren = option.children.isNotEmpty()
     val enabled = !option.disabled
-    val icon = option.icon
-    val extraText = option.extra
 
     LaunchedEffect(hovered, submenuHovered, enabled) {
         if (!enabled) {
@@ -302,21 +319,26 @@ private fun DropdownLabelRow(
         }
     }
 
-    Box {
+    val row: @Composable () -> Unit = {
         Row(
             Modifier
                 .fillMaxWidth()
-                .height(theme.heightFor(size))
+                .height(theme.heightFor(renderers.size))
                 .clip(RoundedCornerShape(theme.borderRadiusSmall))
                 .background(if (hovered && enabled) theme.colors.hover else Color.Transparent)
                 .hoverable(interaction, enabled = enabled)
                 .nClickable(interaction, enabled = enabled) {
-                    if (hasChildren) submenuVisible = true else onSelect(option.key)
+                    option.onClick?.invoke()
+                    if (hasChildren) submenuVisible = true else renderers.onSelect(option.key)
                 }
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (icon != null) {
+            val customIcon = renderers.renderIcon
+            val icon = option.icon
+            if (customIcon != null) {
+                Box(Modifier.padding(end = 8.dp)) { customIcon(option) }
+            } else if (icon != null) {
                 NIcon(
                     icon,
                     Modifier.padding(end = 8.dp),
@@ -324,36 +346,38 @@ private fun DropdownLabelRow(
                     color = if (enabled) theme.colors.icon else theme.colors.iconDisabled,
                 )
             }
-            if (hasChildren) {
+            val customLabel = renderers.renderLabel
+            if (customLabel != null) {
+                Box(Modifier.weight(1f)) { customLabel(option) }
+            } else {
                 NText(
                     text = option.label,
                     modifier = Modifier.weight(1f),
                     color = if (enabled) theme.colors.text2 else theme.colors.textDisabled,
-                    size = theme.fontSizeFor(size),
+                    size = theme.fontSizeFor(renderers.size),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            if (hasChildren) {
                 NIcon(
                     NIcons.ChevronRight,
                     Modifier.padding(start = 8.dp),
                     size = 14.dp,
                     color = if (enabled) theme.colors.icon else theme.colors.iconDisabled,
                 )
-            } else {
-                NText(
-                    text = option.label,
-                    modifier = Modifier.weight(1f),
-                    color = if (enabled) theme.colors.text2 else theme.colors.textDisabled,
-                    size = theme.fontSizeFor(size),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
             }
+            val extraText = option.extra
             if (extraText != null) {
                 Spacer(Modifier.width(12.dp))
                 NText(text = extraText, color = theme.colors.text3, size = 12.sp)
             }
         }
+    }
+
+    Box {
+        val wrapper = renderers.optionWrapper
+        if (wrapper != null) wrapper(option, row) else row()
         if (hasChildren) {
             NPopoverSurface(
                 visible = submenuVisible,
@@ -364,7 +388,11 @@ private fun DropdownLabelRow(
                 dismissOnClickOutside = false,
                 padding = PaddingValues(0.dp),
             ) {
-                DropdownSubmenu(option.children, size, submenuHovered = { submenuHovered = it }, onSelect = onSelect)
+                DropdownSubmenu(
+                    options = option.children,
+                    renderers = renderers,
+                    submenuHovered = { submenuHovered = it },
+                )
             }
         }
     }
@@ -373,9 +401,8 @@ private fun DropdownLabelRow(
 @Composable
 private fun DropdownSubmenu(
     options: List<NDropdownOption>,
-    size: NSize,
+    renderers: DropdownRenderers,
     submenuHovered: (Boolean) -> Unit,
-    onSelect: (String) -> Unit,
 ) {
     val theme = LocalNTheme.current
     val interaction = remember { MutableInteractionSource() }
@@ -389,7 +416,7 @@ private fun DropdownSubmenu(
             .hoverable(interaction),
     ) {
         Column(Modifier.padding(vertical = 4.dp, horizontal = 4.dp)) {
-            DropdownMenuContent(options, size, onSelect)
+            DropdownMenuContent(options, renderers)
         }
     }
 }
