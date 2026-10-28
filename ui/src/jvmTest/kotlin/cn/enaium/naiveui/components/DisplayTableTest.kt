@@ -3,15 +3,26 @@ package cn.enaium.naiveui.components
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.MouseButton
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performMouseInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.isToggleable
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.math.abs
 
 @OptIn(ExperimentalTestApi::class)
 class NDataTableDisplayTest {
@@ -196,6 +207,123 @@ class NDataTableDisplayTest {
         onNodeWithText("Parent").assertExists()
         onNodeWithText("Child One").assertExists()
         onNodeWithText("Child Two").assertExists()
+    }
+
+    @Test
+    fun rowSpanCoversFollowingRowsAndCentersContent() = runComposeUiTest {
+        val rows = listOf(
+            NTableRow(mapOf("id" to "1", "name" to "Merged", "city" to "NY")),
+            NTableRow(mapOf("id" to "2", "name" to "Hidden", "city" to "LA")),
+            NTableRow(mapOf("id" to "3", "name" to "Last", "city" to "SF")),
+        )
+        setNContent {
+            NDataTable(
+                columns = listOf(
+                    NDataTableColumn(
+                        key = "name",
+                        title = "Name",
+                        rowSpan = { _, index -> if (index == 0) 2 else 1 },
+                    ),
+                    NDataTableColumn(key = "city", title = "City"),
+                ),
+                data = rows,
+            )
+        }
+        onAllNodesWithText("Merged")[0].assertExists()
+        onNodeWithText("Hidden").assertDoesNotExist()
+        onNodeWithText("Last").assertExists()
+        val merged = onNodeWithText("Merged").fetchSemanticsNode().boundsInRoot.center.y
+        val first = onNodeWithText("NY").fetchSemanticsNode().boundsInRoot.center.y
+        val second = onNodeWithText("LA").fetchSemanticsNode().boundsInRoot.center.y
+        assertTrue(merged > first && merged < second, "merged content should be vertically centered")
+    }
+
+    @Test
+    fun contextMenuOpensAtLongPressPosition() = runComposeUiTest {
+        setNContent {
+            NDataTable(
+                columns = listOf(
+                    NDataTableColumn("name", "Name"),
+                    NDataTableColumn("city", "City"),
+                ),
+                data = people(),
+                rowContextMenu = { _, dismiss ->
+                    NButton(onClick = dismiss) { NText("Row action") }
+                },
+            )
+        }
+        val alice = onNodeWithText("Alice").fetchSemanticsNode().boundsInRoot
+        val target = Offset(alice.left + 160f, alice.center.y)
+        onRoot().performTouchInput { longClick(target) }
+        waitUntil { onAllNodesWithText("Row action").fetchSemanticsNodes().isNotEmpty() }
+        val menu = onNodeWithText("Row action").fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            menu.left > target.x - 24f,
+            "context menu should open near the long-press x, was ${menu.left} for $target",
+        )
+        assertTrue(
+            abs(menu.top - target.y) < 60f,
+            "context menu should open near the long-press y, was ${menu.top} for $target",
+        )
+    }
+
+    @Test
+    fun fixedColumnsStayPinnedWhenCenterScrolls() = runComposeUiTest {
+        setNContent {
+            NDataTable(
+                columns = listOf(
+                    NDataTableColumn("name", "Name", width = 100.dp, fixed = NDataTableFixed.Left),
+                    NDataTableColumn(
+                        "center",
+                        "Center",
+                        width = 200.dp,
+                        render = { _, index -> NText("center $index") },
+                    ),
+                    NDataTableColumn("address", "Address", width = 120.dp, fixed = NDataTableFixed.Right),
+                ),
+                data = people(),
+                scrollX = 1400.dp,
+            )
+        }
+        val headerTop = onNodeWithText("Name").fetchSemanticsNode().boundsInRoot.top
+        assertTrue(headerTop < 100f, "fixed-column shadows must not expand the header")
+        val before = onNodeWithText("center 0").fetchSemanticsNode().boundsInRoot.left
+        onNodeWithText("Center").performTouchInput { swipeLeft() }
+        waitForIdle()
+        val after = onNodeWithText("center 0").fetchSemanticsNode().boundsInRoot.left
+        assertTrue(after < before, "center column should scroll horizontally")
+        onNodeWithText("Name").assertExists()
+        onNodeWithText("Address").assertExists()
+    }
+
+    @Test
+    fun resizableColumnHandleChangesColumnWidth() = runComposeUiTest {
+        setNContent {
+            NDataTable(
+                columns = listOf(
+                    NDataTableColumn("name", "Name", width = 100.dp, resizable = true),
+                    NDataTableColumn("city", "City"),
+                ),
+                data = people(),
+            )
+        }
+        val handle = onNodeWithContentDescription(
+            "Resize column name",
+            useUnmergedTree = true,
+        )
+        val handleBounds = handle.fetchSemanticsNode().boundsInRoot
+        assertEquals(100f, handleBounds.center.x, 1.5f)
+        val before = handleBounds.left
+        handle.performMouseInput {
+            moveTo(center)
+            press(MouseButton.Primary)
+            moveBy(Offset(80f, 0f))
+            moveBy(Offset(40f, 0f))
+            release(MouseButton.Primary)
+        }
+        waitForIdle()
+        val after = handle.fetchSemanticsNode().boundsInRoot.left
+        assertTrue(after > before + 40f, "resize handle should move with the column edge: before=$before after=$after")
     }
 }
 

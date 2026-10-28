@@ -145,7 +145,7 @@ fun NBadge(
                     Modifier
                         .align(Alignment.TopEnd)
                         .graphicsLayer {
-                            translationX = size.width * (if (dot) 1f else 0.5f) + offset.x.toPx()
+                            translationX = size.width * 0.5f + offset.x.toPx()
                             translationY = -size.height / 2f + offset.y.toPx()
                         }
                         .then(waveModifier),

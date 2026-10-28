@@ -124,8 +124,10 @@ fun NSlider(
     }
     val labelArea = if (markContent != null) 96.dp else with(density) { maxLabelWidthPx.toDp() }
     val marksArea = 22.dp
+    val tooltipInset = if (!vertical && showTooltip && tooltip) 34.dp else 0.dp
+    val tooltipInsetPx = with(density) { tooltipInset.toPx() }
     val canvasWidth = if (vertical && markLabels.isNotEmpty()) handle + labelArea + 14.dp else handle
-    val horizontalHeight = handle + if (markLabels.isNotEmpty()) marksArea else 0.dp
+    val horizontalHeight = tooltipInset + handle + if (markLabels.isNotEmpty()) marksArea else 0.dp
 
     val handles = buildList {
         add(value)
@@ -306,7 +308,7 @@ fun NSlider(
         val fillColor = colors.primary.copy(alpha = alpha)
         val trackCenter = handlePx / 2f
         val trackLength = (if (vertical) height - handlePx else width - handlePx).coerceAtLeast(0f)
-        val centerY = if (vertical) height / 2f else trackCenter
+        val centerY = if (vertical) height / 2f else tooltipInsetPx + trackCenter
 
         fun positionFor(v: Float): Float {
             val fraction = fractionOf(v)
@@ -382,7 +384,7 @@ fun NSlider(
                             layout,
                             topLeft = Offset(
                                 pos - layout.size.width / 2f,
-                                handlePx + 2.dp.toPx(),
+                                tooltipInsetPx + handlePx + 2.dp.toPx(),
                             ),
                         )
                     }
@@ -441,8 +443,19 @@ fun NSlider(
             val pos = positionFor(tooltipValue)
             val anchorX = if (vertical) trackCenter else pos
             val anchorY = if (vertical) pos else centerY
-            val left = (anchorX - boxWidth / 2f).coerceIn(0f, (width - boxWidth).coerceAtLeast(0f))
-            val top = (anchorY - handlePx / 2f - 8.dp.toPx() - boxHeight).coerceAtLeast(0f)
+            val left = if (vertical) {
+                anchorX + handlePx / 2f + 8.dp.toPx()
+            } else {
+                (anchorX - boxWidth / 2f).coerceIn(0f, (width - boxWidth).coerceAtLeast(0f))
+            }
+            val top = if (vertical) {
+                (anchorY - boxHeight / 2f).coerceIn(
+                    0f,
+                    (height - boxHeight).coerceAtLeast(0f),
+                )
+            } else {
+                anchorY - handlePx / 2f - 8.dp.toPx() - boxHeight
+            }
             drawRoundRect(
                 color = Color.Black.copy(alpha = 0.85f),
                 topLeft = Offset(left, top),
@@ -466,7 +479,7 @@ fun NSlider(
                 reverse = reverse,
                 vertical = vertical,
                 handlePx = handlePx,
-                topPx = handlePx,
+                topPx = tooltipInsetPx + handlePx,
                 content = markContent,
             )
         }
@@ -479,7 +492,10 @@ fun NSlider(
                 return if (vertical) {
                     Offset(handlePx / 2f, heightPx - handlePx / 2f - fraction * (heightPx - handlePx))
                 } else {
-                    Offset(handlePx / 2f + fraction * (widthPx - handlePx), handlePx / 2f)
+                    Offset(
+                        handlePx / 2f + fraction * (widthPx - handlePx),
+                        tooltipInsetPx + handlePx / 2f,
+                    )
                 }
             }
             handles.forEach { handleValue ->

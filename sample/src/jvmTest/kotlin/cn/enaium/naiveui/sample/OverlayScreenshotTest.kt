@@ -1,23 +1,31 @@
 package cn.enaium.naiveui.sample
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
@@ -39,7 +47,16 @@ import cn.enaium.naiveui.components.NDropdownOption
 import cn.enaium.naiveui.components.NModalPreset
 import cn.enaium.naiveui.components.NButton
 import cn.enaium.naiveui.components.NText
+import cn.enaium.naiveui.components.NFloatButton
+import cn.enaium.naiveui.components.NBadge
+import cn.enaium.naiveui.icons.NIcon
+import cn.enaium.naiveui.icons.NIcons
+import cn.enaium.naiveui.components.NSlider
 import cn.enaium.naiveui.sample.gallery.feedback.DrawerDocs
+import cn.enaium.naiveui.sample.gallery.display.DtDemoBorder
+import cn.enaium.naiveui.sample.gallery.display.DtDemoColumnDraggable
+import cn.enaium.naiveui.sample.gallery.display.DtDemoFixedHeaderColumn
+import cn.enaium.naiveui.sample.gallery.display.DtDemoMergeCell
 import cn.enaium.naiveui.internal.NTrigger
 import cn.enaium.naiveui.theme.NConfigProvider
 import cn.enaium.naiveui.theme.NLocales
@@ -261,6 +278,157 @@ class OverlayScreenshotTest {
         waitUntil { onAllNodesWithText("Now").fetchSemanticsNodes().isNotEmpty() }
         onNodeWithText("Now").assertExists()
         capture("date-time-range-time-picker.png")
+    }
+
+    @Test
+    fun dataTableMergeCells() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(20.dp)) { DtDemoMergeCell() }
+                }
+            }
+        }
+        waitForIdle()
+        capture("data-table-merge.png")
+    }
+
+    @Test
+    fun floatButtonBadgeOverflow() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(40.dp)) {
+                        NBadge(value = 9, offset = androidx.compose.ui.unit.DpOffset(6.dp, -8.dp)) {
+                            NFloatButton(size = 64.dp) {
+                                NIcon(NIcons.Add, size = 24.dp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        waitForIdle()
+        capture("float-button-badge.png")
+    }
+
+    @Test
+    fun badgeDotCorner() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(40.dp)) {
+                        NBadge(dot = true) {
+                            Box(
+                                Modifier
+                                    .size(48.dp)
+                                    .background(Color(0xFFCCCCCC)),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        waitForIdle()
+        capture("badge-dot-corner.png")
+    }
+
+    @Test
+    fun floatButtonHover() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(40.dp)) {
+                        NFloatButton(
+                            modifier = Modifier.testTag("float-button"),
+                            onClick = {},
+                        ) { NText("+") }
+                    }
+                }
+            }
+        }
+        onNodeWithTag("float-button").performMouseInput { moveTo(center) }
+        waitForIdle()
+        capture("float-button-hover.png")
+    }
+
+    @Test
+    fun sliderHoverTooltip() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(40.dp)) {
+                        NSlider(
+                            value = 50f,
+                            onValueChange = {},
+                            modifier = Modifier.testTag("hover-slider"),
+                        )
+                    }
+                }
+            }
+        }
+        onNodeWithTag("hover-slider").performMouseInput {
+            moveTo(center)
+        }
+        waitForIdle()
+        capture("slider-hover-tooltip.png")
+    }
+
+    @Test
+    fun sliderAlwaysShowTooltip() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(40.dp)) {
+                        NSlider(value = 50f, onValueChange = {}, showTooltip = true)
+                    }
+                }
+            }
+        }
+        waitForIdle()
+        capture("slider-always-tooltip.png")
+    }
+
+    @Test
+    fun dataTableBorders() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(20.dp)) { DtDemoBorder() }
+                }
+            }
+        }
+        waitForIdle()
+        capture("data-table-borders.png")
+    }
+
+    @Test
+    fun dataTableColumnDraggable() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(20.dp)) { DtDemoColumnDraggable() }
+                }
+            }
+        }
+        waitForIdle()
+        capture("data-table-column-draggable.png")
+    }
+
+    @Test
+    fun dataTableFixedColumnShadow() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(20.dp)) { DtDemoFixedHeaderColumn() }
+                }
+            }
+        }
+        onNodeWithText("Row").performTouchInput {
+            swipeLeft()
+        }
+        waitForIdle()
+        capture("data-table-fixed-column-shadow.png")
     }
 
     @Test

@@ -402,7 +402,7 @@ fun DtDemoContextMenu() {
     var lastAction by remember { mutableStateOf("Long-press a row to open its context menu.") }
     DemoSection(
         title = "Context menu",
-        description = "Long-press a row to open a popover menu anchored to that row.",
+        description = "Long-press a row to open its context menu at the press position.",
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             NText(lastAction)

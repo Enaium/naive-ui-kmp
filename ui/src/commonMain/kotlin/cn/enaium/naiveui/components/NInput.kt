@@ -48,6 +48,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -140,6 +142,22 @@ fun NInput(
     var activated by remember(passivelyActivated) { mutableStateOf(!passivelyActivated) }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
+    var textFieldValue by remember {
+        mutableStateOf(TextFieldValue(value, TextRange(value.length)))
+    }
+    LaunchedEffect(value) {
+        if (textFieldValue.text != value) {
+            val length = value.length
+            val selection = textFieldValue.selection
+            textFieldValue = TextFieldValue(
+                text = value,
+                selection = TextRange(
+                    selection.start.coerceIn(0, length),
+                    selection.end.coerceIn(0, length),
+                ),
+            )
+        }
+    }
 
     LaunchedEffect(autofocus) {
         if (autofocus && !disabled) focusRequester.requestFocus()
@@ -193,23 +211,48 @@ fun NInput(
         VisualTransformation.None
     }
 
-    fun handleValueChange(next: String) {
+    fun acceptedValue(next: String): String? {
         val candidate = if (trim) next.trim() else next
         val counter = countGraphemes
         val count = counter?.invoke(candidate) ?: candidate.length
         val limited = when {
             maxlength == null || count <= maxlength -> candidate
-            counter != null -> return
+            counter != null -> return null
             else -> candidate.take(maxlength)
         }
         val predicate = allowInput
-        if (predicate != null && !predicate(limited)) return
-        onValueChange(limited)
+        if (predicate != null && !predicate(limited)) return null
+        return limited
     }
 
     BasicTextField(
-        value = value,
-        onValueChange = { handleValueChange(it) },
+        value = textFieldValue,
+        onValueChange = { next ->
+            textFieldValue = next
+            if (next.composition == null) {
+                val accepted = acceptedValue(next.text)
+                if (accepted != null) {
+                    if (accepted != next.text) {
+                        textFieldValue = TextFieldValue(
+                            text = accepted,
+                            selection = TextRange(accepted.length),
+                        )
+                    }
+                    onValueChange(accepted)
+                } else {
+                    val length = value.length
+                    textFieldValue = TextFieldValue(
+                        text = value,
+                        selection = TextRange(length),
+                    )
+                }
+            } else {
+                // Preserve the IME composition range while the user is typing
+                // pinyin or another composing script. Committing on every
+                // intermediate string resets the cursor and makes the text jump.
+                onValueChange(next.text)
+            }
+        },
         modifier = modifier
             .then(
                 if (isTextarea) {

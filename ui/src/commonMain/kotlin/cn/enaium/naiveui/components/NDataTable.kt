@@ -11,6 +11,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -19,12 +21,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -39,10 +43,18 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -487,6 +499,7 @@ fun NDataTable(
     val loadedChildren = remember { mutableStateMapOf<String, List<NTableRow>>() }
     val loadingKeys = remember { mutableStateMapOf<String, Boolean>() }
     var contextMenuKey by remember { mutableStateOf<String?>(null) }
+    var contextMenuPosition by remember { mutableStateOf(Offset.Zero) }
     var selectionMenuOpen by remember { mutableStateOf(false) }
     var widthOverrides by remember { mutableStateOf<Map<String, Dp>>(emptyMap()) }
 
@@ -636,6 +649,7 @@ fun NDataTable(
         selectionMode == NTableSelectionMode.None &&
         !hasExpandColumn &&
         !groupMode &&
+        !treeMode &&
         !layout.scrolled &&
         layout.left.isEmpty() &&
         layout.right.isEmpty()
@@ -666,6 +680,20 @@ fun NDataTable(
             }
         }
         starts
+    }
+    val mergeSelectedBackground = colors.primarySuppl.copy(
+        alpha = if (theme.isDark) 0.16f else 0.08f,
+    )
+    val mergeOverlayRows: List<Pair<Int, Map<Int, MergeStart>>> = if (!mergeMode) {
+        emptyList()
+    } else {
+        mergeStarts.mapIndexedNotNull { rowIndex, starts ->
+            if (starts.values.any { it.colSpan > 1 || it.rowSpan > 1 }) {
+                rowIndex to starts
+            } else {
+                null
+            }
+        }
     }
 
     val footerHeight = if (pagination != null) 52.dp else 0.dp
@@ -971,6 +999,8 @@ fun NDataTable(
         val checked = key in checkedRowKeys
         val interaction = remember(key) { MutableInteractionSource() }
         val hovered by interaction.collectIsHoveredAsState()
+        val density = LocalDensity.current
+        val pressPosition = remember(key) { floatArrayOf(0f, 0f) }
         val style = rowStyle?.invoke(display.row, display.index)
         val selectedBackground = colors.primarySuppl.copy(
             alpha = if (theme.isDark) 0.16f else 0.08f,
@@ -996,18 +1026,41 @@ fun NDataTable(
             Row(
                 Modifier
                     .fillMaxWidth()
+                    .then(if (mergeMode) Modifier.height(metrics.rowHeight) else Modifier)
                     .background(baseBackground)
                     .then(
                         if (showBottomBorder) Modifier.nBottomBorder(colors.divider) else Modifier,
                     )
                     .hoverable(interaction)
                     .then(
+                        if (rowContextMenu != null) {
+                            Modifier.pointerInput(key) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        val change = awaitPointerEvent(PointerEventPass.Initial)
+                                            .changes.firstOrNull() ?: continue
+                                        pressPosition[0] = change.position.x
+                                        pressPosition[1] = change.position.y
+                                    }
+                                }
+                            }
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .then(
                         if (rowClickable) {
                             Modifier.combinedClickable(
                                 interactionSource = interaction,
                                 indication = null,
                                 onLongClick = if (rowContextMenu != null) {
-                                    { contextMenuKey = key }
+                                    {
+                                        contextMenuPosition = Offset(
+                                            pressPosition[0],
+                                            pressPosition[1],
+                                        )
+                                        contextMenuKey = key
+                                    }
                                 } else {
                                     null
                                 },
@@ -1072,6 +1125,11 @@ fun NDataTable(
                                 }
                             }
                         }
+                        FixedColumnShadows(
+                            state = horizontalState,
+                            hasLeft = layout.left.isNotEmpty(),
+                            hasRight = layout.right.isNotEmpty(),
+                        )
                     }
                     layout.right.forEach { slot ->
                         when {
@@ -1083,13 +1141,22 @@ fun NDataTable(
                 }
             }
             if (rowContextMenu != null && contextMenuKey == key) {
-                NPopoverSurface(
-                    visible = true,
-                    onDismiss = { contextMenuKey = null },
-                    placement = NPlacement.BottomStart,
-                    padding = PaddingValues(6.dp),
+                Box(
+                    Modifier
+                        .offset(
+                            x = with(density) { contextMenuPosition.x.toDp() },
+                            y = with(density) { contextMenuPosition.y.toDp() },
+                        )
+                        .size(0.dp),
                 ) {
-                    rowContextMenu(display.row) { contextMenuKey = null }
+                    NPopoverSurface(
+                        visible = true,
+                        onDismiss = { contextMenuKey = null },
+                        placement = NPlacement.BottomStart,
+                        padding = PaddingValues(6.dp),
+                    ) {
+                        rowContextMenu(display.row) { contextMenuKey = null }
+                    }
                 }
             }
         }
@@ -1100,14 +1167,7 @@ fun NDataTable(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(theme.borderRadius))
-                .background(colors.table)
-                .then(
-                    if (bordered) {
-                        Modifier.nBorder(colors.border, 1.dp, theme.borderRadius)
-                    } else {
-                        Modifier
-                    },
-                ),
+                .background(colors.table),
         ) {
             if (groupMode) {
                 for (headerRow in 0 until maxHeaderRows) {
@@ -1207,6 +1267,90 @@ fun NDataTable(
                         size = effectiveSize,
                     )
                 }
+            } else if (mergeMode) {
+                val mergeContent: @Composable () -> Unit = {
+                    Box(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth()) {
+                            displayRows.forEachIndexed { rowIndex, display ->
+                                renderRow(display, rowIndex)
+                            }
+                        }
+                        mergeOverlayRows.forEach { (rowIndex, starts) ->
+                            val display = displayRows[rowIndex]
+                            val maxRowSpan = starts.values.maxOf { it.rowSpan }
+                            val style = rowStyle?.invoke(display.row, display.index)
+                            val checked = display.key in checkedRowKeys
+                            val overlayBackground = when {
+                                checked -> mergeSelectedBackground
+                                style?.backgroundColor != null -> style.backgroundColor
+                                striped && rowIndex % 2 == 1 -> colors.tableStriped
+                                else -> colors.table
+                            }
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .offset(y = metrics.rowHeight * rowIndex.toFloat())
+                                    .height(metrics.rowHeight * maxRowSpan.toFloat()),
+                            ) {
+                                var columnIndex = 0
+                                while (columnIndex < layout.center.size) {
+                                    val start = starts[columnIndex]
+                                    if (start != null &&
+                                        (start.colSpan > 1 || start.rowSpan > 1)
+                                    ) {
+                                        val end = (columnIndex + start.colSpan)
+                                            .coerceAtMost(layout.center.size)
+                                        val sub = layout.center.subList(columnIndex, end)
+                                        val (cellWidth, cellWeight) = combinedSlotWidth(sub)
+                                        val column = layout.center[columnIndex].spec.column!!
+                                        NTableCell(
+                                            metrics = metrics,
+                                            width = cellWidth,
+                                            weight = cellWeight,
+                                            align = column.align,
+                                            dividerColor = dividerColor,
+                                            height = metrics.rowHeight * start.rowSpan.toFloat(),
+                                            backgroundColor = overlayBackground,
+                                            leftBorderColor = dividerColor,
+                                            bottomBorderColor = dividerColor,
+                                        ) {
+                                            DataCellContent(
+                                                column = column,
+                                                row = display.row,
+                                                index = display.index,
+                                                metrics = metrics,
+                                                color = column.textColor ?: style?.textColor ?: colors.text2,
+                                                fallbackRender = renderCell,
+                                            )
+                                        }
+                                        columnIndex = end
+                                    } else {
+                                        val slot = layout.center[columnIndex]
+                                        if (slot.weight != null) {
+                                            Spacer(Modifier.weight(slot.weight!!))
+                                        } else {
+                                            Spacer(Modifier.width(slot.width ?: 0.dp))
+                                        }
+                                        columnIndex++
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (effectiveMaxHeight != null) {
+                    Box(Modifier.fillMaxWidth().height(effectiveMaxHeight)) {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            mergeContent()
+                        }
+                    }
+                } else {
+                    mergeContent()
+                }
             } else if (effectiveMaxHeight != null) {
                 LazyColumn(Modifier.fillMaxWidth().height(effectiveMaxHeight)) {
                     itemsIndexed(displayRows) { rowIndex, display ->
@@ -1284,6 +1428,11 @@ fun NDataTable(
                                 )
                             }
                         }
+                        FixedColumnShadows(
+                            state = horizontalState,
+                            hasLeft = layout.left.isNotEmpty(),
+                            hasRight = layout.right.isNotEmpty(),
+                        )
                     }
                     layout.right.forEach { slot ->
                         SummaryCell(
@@ -1337,6 +1486,13 @@ fun NDataTable(
             ) {
                 NBaseLoading(size = 26.dp)
             }
+        }
+        if (bordered) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .nBorder(colors.border, 1.dp, theme.borderRadius),
+            )
         }
     }
 }
@@ -1408,6 +1564,43 @@ private fun ExpandToggle(
 }
 
 @Composable
+private fun BoxScope.FixedColumnShadows(
+    state: ScrollState,
+    hasLeft: Boolean,
+    hasRight: Boolean,
+) {
+    if ((!hasLeft || state.value <= 0) && (!hasRight || !state.canScrollForward)) return
+    Box(Modifier.matchParentSize()) {
+        if (hasLeft && state.value > 0) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxHeight()
+                    .width(8.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color.Black.copy(alpha = 0.12f), Color.Transparent),
+                        ),
+                    ),
+            )
+        }
+        if (hasRight && state.canScrollForward) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(8.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.12f)),
+                        ),
+                    ),
+            )
+        }
+    }
+}
+
+@Composable
 private fun HeaderPaneRow(
     layout: DataTableLayout,
     horizontalState: ScrollState,
@@ -1434,6 +1627,11 @@ private fun HeaderPaneRow(
             ) {
                 content(layout.center)
             }
+            FixedColumnShadows(
+                state = horizontalState,
+                hasLeft = layout.left.isNotEmpty(),
+                hasRight = layout.right.isNotEmpty(),
+            )
         }
         content(layout.right)
     }
@@ -1473,11 +1671,19 @@ private fun RowScope.MergeBodyRow(
     var index = 0
     while (index < leafCount) {
         val start = starts[index]
-        if (start != null) {
+        if (start != null && (start.colSpan > 1 || start.rowSpan > 1)) {
             val sub = leaves.subList(index, (index + start.colSpan).coerceAtMost(leafCount))
             val (widthValue, weightValue) = combinedSlotWidth(sub)
-            cell(leaves[index].spec.column!!, index, widthValue, weightValue)
+            NTableCell(
+                metrics = metrics,
+                width = widthValue,
+                weight = weightValue,
+                dividerColor = dividerColor,
+            ) {}
             index += start.colSpan
+        } else if (start != null) {
+            cell(leaves[index].spec.column!!, index, leaves[index].width, leaves[index].weight)
+            index++
         } else {
             NTableCell(
                 metrics = metrics,
@@ -1509,6 +1715,7 @@ private fun RowScope.DataTableHeaderCell(
 ) {
     val theme = LocalNTheme.current
     val colors = theme.colors
+    var measuredWidth by remember(column.key) { mutableStateOf<Dp?>(null) }
     NTableHeaderCell(
         metrics = metrics,
         width = width,
@@ -1516,6 +1723,7 @@ private fun RowScope.DataTableHeaderCell(
         align = column.align,
         dividerColor = dividerColor,
         onClick = if (column.sortable) onSort else null,
+        onWidthMeasured = { measuredWidth = it },
     ) {
         if (column.header != null) {
             column.header.invoke()
@@ -1606,25 +1814,47 @@ private fun RowScope.DataTableHeaderCell(
             }
         }
         if (column.resizable) {
-            val latestWidth = rememberUpdatedState(width ?: column.width ?: 140.dp)
+            Spacer(Modifier.weight(1f))
+            val latestWidth = rememberUpdatedState(
+                measuredWidth ?: width ?: column.width ?: 140.dp,
+            )
+            val resizeInteraction = remember { MutableInteractionSource() }
+            val resizeHovered by resizeInteraction.collectIsHoveredAsState()
             Box(
                 Modifier
-                    .width(8.dp)
+                    .offset(x = metrics.horizontalPadding + 6.dp)
+                    .width(12.dp)
                     .height(22.dp)
+                    .hoverable(resizeInteraction)
+                    .pointerHoverIcon(PointerIcon.Hand)
+                    .semantics { contentDescription = "Resize column ${column.key}" }
                     .pointerInput(column.key) {
                         var start = 0f
+                        var dragged = 0f
                         detectHorizontalDragGestures(
-                            onDragStart = { start = latestWidth.value.value },
+                            onDragStart = {
+                                start = latestWidth.value.value
+                                dragged = 0f
+                            },
                             onHorizontalDrag = { change, dragAmount ->
                                 change.consume()
-                                val next = (start + dragAmount / density).dp
+                                dragged += dragAmount
+                                val next = (start + dragged / density).dp
                                 val minWidth = column.minWidth ?: 50.dp
                                 val maxWidth = column.maxWidth ?: 800.dp
                                 onWidthChange(next.coerceIn(minWidth, maxWidth))
                             },
                         )
                     },
-            )
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier
+                        .width(1.dp)
+                        .height(18.dp)
+                        .background(if (resizeHovered) colors.primary else colors.divider),
+                )
+            }
         }
     }
 }

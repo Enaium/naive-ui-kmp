@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -167,13 +168,15 @@ fun DemoSection(
                             .background(colors.code)
                             .padding(14.dp),
                     ) {
-                        BasicText(
-                            text = code,
-                            style = TextStyle(
-                                color = colors.text2, fontSize = 13.sp,
-                                fontFamily = FontFamily.Monospace, lineHeight = 20.sp,
-                            ),
-                        )
+                        SelectionContainer {
+                            BasicText(
+                                text = code,
+                                style = TextStyle(
+                                    color = colors.text2, fontSize = 13.sp,
+                                    fontFamily = FontFamily.Monospace, lineHeight = 20.sp,
+                                ),
+                            )
+                        }
                     }
                 }
             }

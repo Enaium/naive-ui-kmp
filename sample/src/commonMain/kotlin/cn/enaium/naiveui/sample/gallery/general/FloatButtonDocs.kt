@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.enaium.naiveui.components.NBadge
@@ -84,13 +85,21 @@ NFloatButton(onClick = { ... }) {
 
         DemoSection(
             title = "Badge",
-            description = "Wrap the icon in `NBadge` to show a count, dot or custom marker.",
+            description = "Wrap the float button in `NBadge` so the marker sits on the outside edge.",
         ) {
             NFlex(size = 12.dp, wrap = true) {
-                NFloatButton { NBadge(value = 9) { NIcon(NIcons.Add) } }
-                NFloatButton { NBadge(value = 100, max = 99) { NIcon(NIcons.Add) } }
-                NFloatButton { NBadge(dot = true) { NIcon(NIcons.Add) } }
-                NFloatButton { NBadge(value = "New") { NIcon(NIcons.Add) } }
+                NBadge(value = 9, offset = DpOffset(6.dp, -8.dp)) {
+                    NFloatButton { NIcon(NIcons.Add) }
+                }
+                NBadge(value = 100, max = 99, offset = DpOffset(6.dp, -8.dp)) {
+                    NFloatButton { NIcon(NIcons.Add) }
+                }
+                NBadge(dot = true, offset = DpOffset(4.dp, -4.dp)) {
+                    NFloatButton { NIcon(NIcons.Add) }
+                }
+                NBadge(value = "New", offset = DpOffset(6.dp, -6.dp)) {
+                    NFloatButton { NIcon(NIcons.Add) }
+                }
             }
         }
 

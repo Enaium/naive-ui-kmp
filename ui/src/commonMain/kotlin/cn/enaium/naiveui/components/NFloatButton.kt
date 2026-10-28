@@ -115,10 +115,20 @@ fun NFloatButton(
         else -> theme.colors.popover
     }
     val currentContainer = when {
-        inSquareGroup -> if (hovered) theme.colors.buttonColor2Hover else container
-        pressed -> if (primary) theme.colors.primaryPressed else theme.colors.buttonColor2Pressed
-        hovered -> if (primary) theme.colors.primaryHover else theme.colors.buttonColor2Hover
+        inSquareGroup -> container
+        pressed -> if (primary) theme.colors.primaryPressed else container
+        hovered -> if (primary) theme.colors.primaryHover else container
         else -> container
+    }
+    // Keep the popover surface opaque and paint hover/pressed as an overlay.
+    // Replacing the background with a translucent colour exposes the shadow
+    // underneath and makes the whole button look grey.
+    val stateOverlay = when {
+        primary -> androidx.compose.ui.graphics.Color.Transparent
+        inSquareGroup -> if (hovered) theme.colors.buttonColor2Hover else androidx.compose.ui.graphics.Color.Transparent
+        pressed -> theme.colors.buttonColor2Pressed
+        hovered -> theme.colors.buttonColor2Hover
+        else -> androidx.compose.ui.graphics.Color.Transparent
     }
     val foreground = when {
         inSquareGroup -> if (primary) theme.colors.primary else theme.colors.text2
@@ -160,8 +170,6 @@ fun NFloatButton(
                         Modifier.nShadow(theme, if (pressed) 3 else if (hovered) 2 else 1, resolved)
                     },
                 )
-                .clip(resolved)
-                .background(currentContainer)
                 .hoverable(interaction)
                 .then(
                     when (menuTrigger) {
@@ -173,6 +181,11 @@ fun NFloatButton(
                 ),
             contentAlignment = Alignment.Center,
         ) {
+            Box(Modifier.matchParentSize().clip(resolved).background(currentContainer)) {
+                if (stateOverlay != androidx.compose.ui.graphics.Color.Transparent) {
+                    Box(Modifier.matchParentSize().background(stateOverlay))
+                }
+            }
             Box(Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
                 Column(
                     Modifier.graphicsLayer {

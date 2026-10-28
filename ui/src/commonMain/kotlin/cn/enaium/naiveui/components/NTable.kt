@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -43,6 +44,7 @@ import cn.enaium.naiveui.internal.NBaseLoading
 import cn.enaium.naiveui.internal.NScrollbar
 import cn.enaium.naiveui.internal.nBorder
 import cn.enaium.naiveui.internal.nBottomBorder
+import cn.enaium.naiveui.internal.nLeftBorder
 import cn.enaium.naiveui.internal.nClickable
 import cn.enaium.naiveui.internal.nRightBorder
 import cn.enaium.naiveui.internal.nTopBorder
@@ -148,11 +150,20 @@ internal fun RowScope.NTableHeaderCell(
     align: NTableAlign = NTableAlign.Left,
     dividerColor: Color? = null,
     onClick: (() -> Unit)? = null,
+    onWidthMeasured: ((Dp) -> Unit)? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
+    val density = androidx.compose.ui.platform.LocalDensity.current
     Row(
         (if (weight != null) Modifier.weight(weight) else Modifier.width(width ?: 0.dp))
+            .then(
+                if (onWidthMeasured != null) {
+                    Modifier.onSizeChanged { onWidthMeasured(with(density) { it.width.toDp() }) }
+                } else {
+                    Modifier
+                },
+            )
             .then(if (dividerColor != null) Modifier.nRightBorder(dividerColor) else Modifier)
             .then(if (onClick != null) Modifier.nClickable(interaction, onClick = onClick) else Modifier)
             .defaultMinSize(minHeight = metrics.headerHeight)
@@ -170,12 +181,20 @@ internal fun RowScope.NTableCell(
     weight: Float? = null,
     align: NTableAlign = NTableAlign.Left,
     dividerColor: Color? = null,
+    height: Dp? = null,
+    backgroundColor: Color = Color.Transparent,
+    leftBorderColor: Color? = null,
+    bottomBorderColor: Color? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
     Row(
         (if (weight != null) Modifier.weight(weight) else Modifier.width(width ?: 0.dp))
+            .then(if (height != null) Modifier.height(height) else Modifier)
+            .then(if (backgroundColor != Color.Transparent) Modifier.background(backgroundColor) else Modifier)
+            .then(if (leftBorderColor != null) Modifier.nLeftBorder(leftBorderColor) else Modifier)
             .then(if (dividerColor != null) Modifier.nRightBorder(dividerColor) else Modifier)
-            .defaultMinSize(minHeight = metrics.rowHeight)
+            .then(if (bottomBorderColor != null) Modifier.nBottomBorder(bottomBorderColor) else Modifier)
+            .then(if (height == null) Modifier.defaultMinSize(minHeight = metrics.rowHeight) else Modifier)
             .padding(horizontal = metrics.horizontalPadding, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = nTableTextAlignment(align),
@@ -325,14 +344,7 @@ fun NTable(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(theme.borderRadius))
-                .background(colors.table)
-                .then(
-                    if (bordered) {
-                        Modifier.nBorder(colors.border, 1.dp, theme.borderRadius)
-                    } else {
-                        Modifier
-                    },
-                ),
+                .background(colors.table),
         ) {
             // Header is rendered outside the vertical scroll container so it
             // stays visible, mirroring the sticky header of naive-ui.
@@ -624,6 +636,13 @@ fun NTable(
             ) {
                 NBaseLoading(size = 26.dp)
             }
+        }
+        if (bordered) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .nBorder(colors.border, 1.dp, theme.borderRadius),
+            )
         }
     }
 }
