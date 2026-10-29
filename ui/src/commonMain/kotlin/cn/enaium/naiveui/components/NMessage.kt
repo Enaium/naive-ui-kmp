@@ -1,5 +1,14 @@
 package cn.enaium.naiveui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.EaseIn
+import androidx.compose.animation.core.EaseInOut
+import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -20,6 +29,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -39,6 +49,7 @@ import cn.enaium.naiveui.internal.nShadow
 import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NStatus
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** Semantic type of a global message. */
 enum class NMessageType { Default, Info, Success, Warning, Error, Loading }
@@ -202,7 +213,10 @@ private class NMessageEntry(
     val spec: NMessageSpec,
     val textState: MutableState<String>,
     val typeState: MutableState<NMessageType>,
-)
+) {
+    val visible = mutableStateOf(true)
+}
+
 
 /**
  * Hosts the imperative message API. Wrap the application content with it and
@@ -216,6 +230,17 @@ fun NMessageProvider(
 ) {
     val entries = remember { mutableStateListOf<NMessageEntry>() }
     var nextId by remember { mutableStateOf(0L) }
+    val scope = rememberCoroutineScope()
+
+    fun dismiss(entry: NMessageEntry) {
+        if (!entry.visible.value) return
+        entry.visible.value = false
+        scope.launch {
+            delay(220)
+            entries.remove(entry)
+        }
+    }
+
     val api = remember(max) {
         NMessageApi(
             show = { spec ->
@@ -223,17 +248,27 @@ fun NMessageProvider(
                 if (max > 0 && entries.size >= max) entries.removeAt(0)
                 val textState = mutableStateOf(spec.text)
                 val typeState = mutableStateOf(spec.type)
-                entries.add(NMessageEntry(id, spec, textState, typeState))
+                val entry = NMessageEntry(id, spec, textState, typeState)
+                entries.add(entry)
                 NMessageHandle(textState, typeState) {
-                    entries.removeAll { it.id == id }
+                    dismiss(entry)
                 }
             },
-            clear = { entries.clear() },
+            clear = {
+                val removing = entries.toList()
+                removing.forEach { it.visible.value = false }
+                scope.launch {
+                    delay(220)
+                    entries.removeAll(removing.toSet())
+                }
+            },
         )
     }
     CompositionLocalProvider(LocalNMessage provides api) {
         content()
-        NMessageHost(entries, placement) { id -> entries.removeAll { it.id == id } }
+        NMessageHost(entries, placement) { id ->
+            entries.firstOrNull { it.id == id }?.let(::dismiss)
+        }
     }
 }
 
@@ -270,14 +305,47 @@ private fun NMessageHost(
             dismissOnClickOutside = false,
         ),
     ) {
+        val horizontalAlignment = when (placement) {
+            NMessagePlacement.Top,
+            NMessagePlacement.Bottom,
+            -> Alignment.CenterHorizontally
+            NMessagePlacement.TopLeft,
+            NMessagePlacement.BottomLeft,
+            -> Alignment.Start
+            NMessagePlacement.TopRight,
+            NMessagePlacement.BottomRight,
+            -> Alignment.End
+        }
         Column(
             Modifier.widthIn(max = 460.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = horizontalAlignment,
         ) {
             entries.forEach { entry ->
-                key(entry.id) { NMessageItem(entry) { onClose(entry.id) } }
+                key(entry.id) {
+                    NMessageAnimatedItem(entry) { onClose(entry.id) }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun NMessageAnimatedItem(entry: NMessageEntry, onClose: () -> Unit) {
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    AnimatedVisibility(
+        visible = appeared && entry.visible.value,
+        enter = fadeIn(tween(200, easing = EaseOut)) + scaleIn(
+            initialScale = 0.9f,
+            animationSpec = tween(200, easing = EaseOut),
+        ),
+        exit = fadeOut(tween(200, easing = EaseIn)) + scaleOut(
+            targetScale = 0.9f,
+            animationSpec = tween(200, easing = EaseIn),
+        ),
+    ) {
+        NMessageItem(entry, onClose)
     }
 }
 

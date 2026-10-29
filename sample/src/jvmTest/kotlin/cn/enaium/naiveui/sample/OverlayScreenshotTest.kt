@@ -2,7 +2,9 @@ package cn.enaium.naiveui.sample
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -15,6 +17,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.MouseButton
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.onAllNodesWithText
@@ -41,11 +45,19 @@ import cn.enaium.naiveui.components.NTreeSelectOption
 import cn.enaium.naiveui.components.NSelect
 import cn.enaium.naiveui.components.NSelectOption
 import cn.enaium.naiveui.components.NModal
+import cn.enaium.naiveui.components.NLayout
+import cn.enaium.naiveui.components.NLayoutSider
+import cn.enaium.naiveui.components.NLayoutCollapseMode
+import cn.enaium.naiveui.components.NLayoutSiderTrigger
+import cn.enaium.naiveui.components.NMenu
+import cn.enaium.naiveui.components.NMenuOption
 import cn.enaium.naiveui.components.NTooltip
 import cn.enaium.naiveui.components.NDropdown
 import cn.enaium.naiveui.components.NDropdownOption
 import cn.enaium.naiveui.components.NModalPreset
 import cn.enaium.naiveui.components.NButton
+import cn.enaium.naiveui.components.NButtonGroup
+import cn.enaium.naiveui.components.NButtonType
 import cn.enaium.naiveui.components.NText
 import cn.enaium.naiveui.components.NFloatButton
 import cn.enaium.naiveui.components.NBadge
@@ -331,6 +343,204 @@ class OverlayScreenshotTest {
         }
         waitForIdle()
         capture("badge-dot-corner.png")
+    }
+
+    @Test
+    fun selectKeepsFocusBorderAfterSelection() = runComposeUiTest {
+        var value by mutableStateOf<Any?>(null)
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(40.dp)) {
+                        NSelect(
+                            options = listOf(
+                                NSelectOption("Option A", "a"),
+                                NSelectOption("Option B", "b"),
+                            ),
+                            value = value,
+                            onValueChange = { value = it },
+                            placeholder = "Pick one",
+                        )
+                    }
+                }
+            }
+        }
+        onNodeWithText("Pick one").performClick()
+        waitUntil { onAllNodesWithText("Option A").fetchSemanticsNodes().isNotEmpty() }
+        onAllNodesWithText("Option A")[0].performClick()
+        waitForIdle()
+        capture("select-focus-border.png")
+        onRoot().performMouseInput { moveTo(Offset(500f, 500f)); press(MouseButton.Primary); release(MouseButton.Primary) }
+        waitForIdle()
+        capture("select-blur-border.png")
+    }
+
+    @Test
+    fun secondaryPressed() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(40.dp)) {
+                        NButton(
+                            secondary = true,
+                            modifier = Modifier.testTag("secondary"),
+                        ) { NText("Secondary") }
+                        NButton(
+                            tertiary = true,
+                            modifier = Modifier.testTag("tertiary"),
+                        ) { NText("Tertiary") }
+                        NButton(
+                            quaternary = true,
+                            modifier = Modifier.testTag("quaternary"),
+                        ) { NText("Quaternary") }
+                    }
+                }
+            }
+        }
+        onNodeWithTag("secondary").performTouchInput { down(center) }
+        mainClock.advanceTimeBy(200)
+        waitForIdle()
+        capture("button-secondary-pressed.png")
+    }
+
+    @Test
+    fun buttonGroups() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(40.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        NButtonGroup(vertical = true, roundStart = true) {
+                            NButton(icon = { NIcon(NIcons.ArrowUp) }) { NText("Live a") }
+                            NButton(ghost = true, icon = { NIcon(NIcons.ArrowUp) }) { NText("Sufficient") }
+                            NButton(icon = { NIcon(NIcons.ArrowUp) }) { NText("Life") }
+                        }
+                        NButtonGroup(roundEnd = true) {
+                            NButton { NText("Eat") }
+                            NButton { NText("One More") }
+                            NButton(modifier = Modifier.testTag("apple")) { NText("Apple") }
+                        }
+                    }
+                }
+            }
+        }
+        waitForIdle()
+        capture("button-groups.png")
+        mainClock.autoAdvance = false
+        onNodeWithTag("apple").performTouchInput { down(center) }
+        mainClock.advanceTimeByFrame()
+        mainClock.advanceTimeBy(180)
+        capture("button-group-wave.png")
+        onNodeWithTag("apple").performTouchInput { up() }
+        mainClock.advanceTimeBy(800)
+        capture("button-group-focused.png")
+    }
+
+    @Test
+    fun dashedButtons() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(40.dp)) {
+                        NButton(dashed = true) { NText("Default") }
+                        NButton(type = NButtonType.Primary, dashed = true) { NText("Primary") }
+                        NButton(type = NButtonType.Info, dashed = true) { NText("Info") }
+                    }
+                }
+            }
+        }
+        waitForIdle()
+        capture("button-dashed.png")
+    }
+
+    @Test
+    fun menuCollapsedSider() = runComposeUiTest {
+        var collapsed by mutableStateOf(true)
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    NLayout(
+                        modifier = Modifier.height(320.dp),
+                        hasSider = true,
+                    ) {
+                        NLayoutSider(
+                            bordered = true,
+                            collapseMode = NLayoutCollapseMode.Width,
+                            collapsedWidth = 64.dp,
+                            width = 240.dp,
+                            collapsed = collapsed,
+                            onCollapsedChange = { collapsed = it },
+                            showTrigger = true,
+                            triggerStyle = NLayoutSiderTrigger.ArrowCircle,
+                        ) {
+                            NMenu(
+                                options = listOf(
+                                    NMenuOption("a", "Hear the Wind Sing", icon = cn.enaium.naiveui.icons.NIcons.File),
+                                    NMenuOption(
+                                        key = "b",
+                                        label = "Dance Dance Dance",
+                                        icon = cn.enaium.naiveui.icons.NIcons.File,
+                                        children = listOf(NMenuOption("c", "Child")),
+                                    ),
+                                ),
+                                value = null,
+                                onValueChange = {},
+                                collapsed = collapsed,
+                                collapsedWidth = 64.dp,
+                                width = 240.dp,
+                            )
+                        }
+                        Column(Modifier.padding(20.dp)) { NText("Content") }
+                    }
+                }
+            }
+        }
+        waitForIdle()
+        capture("menu-collapsed-sider.png")
+    }
+
+    @Test
+    fun menuChevron() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(40.dp)) {
+                        NMenu(
+                            options = listOf(
+                                NMenuOption(
+                                    key = "parent",
+                                    label = "Parent",
+                                    children = listOf(NMenuOption("child", "Child")),
+                                ),
+                            ),
+                            value = null,
+                            onValueChange = {},
+                        )
+                    }
+                }
+            }
+        }
+        waitForIdle()
+        capture("menu-chevron.png")
+    }
+
+    @Test
+    fun primaryButtonFocusBorder() = runComposeUiTest {
+        setContent {
+            NConfigProvider {
+                NGlobalStyle {
+                    Column(Modifier.padding(40.dp)) {
+                        NButton(type = NButtonType.Primary, onClick = {}) {
+                            NText("Primary")
+                        }
+                    }
+                }
+            }
+        }
+        onNodeWithText("Primary").performClick()
+        onNodeWithText("Primary").assertIsFocused()
+        mainClock.advanceTimeBy(400)
+        waitForIdle()
+        capture("button-primary-focus.png")
     }
 
     @Test

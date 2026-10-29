@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +31,7 @@ import cn.enaium.naiveui.internal.LocalNContentTextStyle
 import cn.enaium.naiveui.internal.nBorder
 import cn.enaium.naiveui.internal.nBottomBorder
 import cn.enaium.naiveui.internal.nClickable
+import cn.enaium.naiveui.internal.rememberNPressInteraction
 import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NSize
 import cn.enaium.naiveui.theme.nSize
@@ -163,7 +163,7 @@ fun NListItem(
     val size = context?.size ?: NSize.Medium
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    val pressed by interaction.collectIsPressedAsState()
+    val pressed = rememberNPressInteraction(interaction)
     val horizontalPadding: Dp = if (bordered || hoverable) {
         when (size) {
             NSize.Tiny, NSize.Small -> 16.dp

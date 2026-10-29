@@ -75,7 +75,7 @@ kotlin {
 }
 
 group = "cn.enaium.naiveui"
-version = "1.1.1"
+version = "1.1.2"
 
 mavenPublishing {
     coordinates(project.group.toString(), rootProject.name, project.version.toString())

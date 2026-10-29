@@ -1,6 +1,9 @@
 package cn.enaium.naiveui.components
 
+import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
@@ -32,19 +35,27 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.ParentDataModifier
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.internal.LocalNContentColor
 import cn.enaium.naiveui.internal.NScrollbar as InternalNScrollbar
 import cn.enaium.naiveui.internal.nBorder
+import cn.enaium.naiveui.internal.nShadow
 import cn.enaium.naiveui.internal.nBottomBorder
 import cn.enaium.naiveui.internal.nClickable
 import cn.enaium.naiveui.internal.nLeftBorder
@@ -190,18 +201,19 @@ private fun NLayoutArea(
             // A Measurable may only be measured once per layout pass.
             val finalSider = sider
             layout(width, height) {
-                var x = 0
-                if (placement == NLayoutSiderPlacement.Left) {
-                    finalSider.placeRelative(0, 0)
-                    x = finalSider.width
-                }
+                // Place content first and the sider last so the sider trigger
+                // can paint over the content area when it straddles the edge.
+                var x = if (placement == NLayoutSiderPlacement.Left) finalSider.width else 0
                 others.forEach { placeable ->
                     placeable.placeRelative(x, 0)
                     x += placeable.width
                 }
-                if (placement == NLayoutSiderPlacement.Right) {
-                    finalSider.placeRelative(width - finalSider.width, 0)
+                val siderX = if (placement == NLayoutSiderPlacement.Left) {
+                    0
+                } else {
+                    width - finalSider.width
                 }
+                finalSider.placeRelative(siderX, 0)
             }
         }
     }
@@ -289,7 +301,11 @@ fun NLayoutSider(
     val theme = LocalNTheme.current
     val placement = LocalNLayoutSiderPlacement.current
     val targetWidth = if (collapsed) collapsedWidth else width
-    val animatedWidth by animateDpAsState(targetWidth, label = "n-layout-sider-width")
+    val animatedWidth by animateDpAsState(
+        targetValue = targetWidth,
+        animationSpec = tween(200, easing = EaseInOut),
+        label = "n-layout-sider-width",
+    )
     val background = if (inverted) theme.colors.inverted else theme.colors.card
     val foreground = if (inverted) Color.White else theme.colors.text2
     val interaction = remember { MutableInteractionSource() }
@@ -326,6 +342,7 @@ fun NLayoutSider(
                 .then(NLayoutSiderMarker())
                 .width(animatedWidth)
                 .fillMaxHeight()
+                .zIndex(1f)
                 .background(background)
                 .then(
                     if (bordered) {
@@ -357,7 +374,7 @@ fun NLayoutSider(
                 } else {
                     Alignment.CenterStart
                 }
-                val triggerOffset = if (placement == NLayoutSiderPlacement.Left) 9.dp else (-9).dp
+                val triggerOffset = if (placement == NLayoutSiderPlacement.Left) 11.dp else (-11).dp
                 if (triggerStyle == NLayoutSiderTrigger.Bar) {
                     val barInteraction = remember { MutableInteractionSource() }
                     val barHovered by barInteraction.collectIsHoveredAsState()
@@ -371,25 +388,45 @@ fun NLayoutSider(
                             .nClickable(barInteraction) { onCollapsedChange(!collapsed) },
                     )
                 } else {
-                    Box(
-                        Modifier
-                            .align(triggerAlignment)
-                            .offset(x = triggerOffset)
-                            .size(18.dp)
-                            .clip(CircleShape)
-                            .background(theme.colors.base)
-                            .nBorder(theme.colors.divider, 1.dp, 9.dp)
-                            .hoverable(interaction)
-                            .nClickable(interaction) { onCollapsedChange(!collapsed) },
-                        contentAlignment = Alignment.Center,
+                    val density = LocalDensity.current
+                    val triggerRotation by animateFloatAsState(
+                        targetValue = if (placement == NLayoutSiderPlacement.Left) {
+                            if (collapsed) 0f else 180f
+                        } else {
+                            if (collapsed) 180f else 0f
+                        },
+                        animationSpec = tween(200, easing = EaseInOut),
+                        label = "n-layout-sider-trigger-rotation",
+                    )
+                    Popup(
+                        alignment = triggerAlignment,
+                        offset = IntOffset(with(density) { triggerOffset.roundToPx() }, 0),
+                        onDismissRequest = {},
+                        properties = PopupProperties(
+                            focusable = false,
+                            dismissOnBackPress = false,
+                            dismissOnClickOutside = false,
+                        ),
                     ) {
-                        val icon = when {
-                            placement == NLayoutSiderPlacement.Left && collapsed -> NIcons.ChevronRight
-                            placement == NLayoutSiderPlacement.Left -> NIcons.ChevronLeft
-                            collapsed -> NIcons.ChevronLeft
-                            else -> NIcons.ChevronRight
+                        Box(
+                            Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(Color.White)
+                                .nBorder(theme.colors.border, 1.dp, 11.dp)
+                                .hoverable(interaction)
+                                .nClickable(interaction) { onCollapsedChange(!collapsed) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            NIcon(
+                                NIcons.ChevronRight,
+                                modifier = Modifier.graphicsLayer {
+                                    rotationZ = triggerRotation
+                                },
+                                size = 14.dp,
+                                color = theme.colors.text2,
+                            )
                         }
-                        NIcon(icon, size = 12.dp, color = theme.colors.text2)
                     }
                 }
             }

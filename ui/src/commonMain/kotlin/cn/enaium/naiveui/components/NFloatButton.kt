@@ -11,7 +11,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +38,7 @@ import cn.enaium.naiveui.icons.NIcons
 import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.internal.LocalNContentColor
 import cn.enaium.naiveui.internal.nClickable
+import cn.enaium.naiveui.internal.rememberNPressInteraction
 import cn.enaium.naiveui.internal.nShadow
 import cn.enaium.naiveui.theme.LocalNTheme
 
@@ -87,7 +87,7 @@ fun NFloatButton(
     val interaction = remember { MutableInteractionSource() }
     val hoverInteraction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    val pressed by interaction.collectIsPressedAsState()
+    val pressed = rememberNPressInteraction(interaction)
     val areaHovered by hoverInteraction.collectIsHoveredAsState()
     val primary = type == NFloatButtonType.Primary
     var internalMenuVisible by remember { mutableStateOf(false) }

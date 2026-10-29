@@ -236,18 +236,31 @@ fun ButtonDocs() {
 
         DemoSection(
             title = "Button group",
-            description = "Group related actions with `NButtonGroup`. A group can be vertical and share a size.",
+            description = "Buttons can be grouped horizontally or vertically. " +
+                "`roundStart` and `roundEnd` give the outer ends a pill shape.",
         ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                NButtonGroup(vertical = true) {
-                    NButton(icon = { NIcon(NIcons.ArrowUp) }) { NText("Live a") }
-                    NButton(ghost = true, icon = { NIcon(NIcons.ArrowUp) }) { NText("Sufficient") }
-                    NButton(icon = { NIcon(NIcons.ArrowUp) }) { NText("Life") }
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    NButtonGroup(vertical = true, roundStart = true) {
+                        NButton(icon = { NIcon(NIcons.ArrowUp) }) { NText("Live a") }
+                        NButton(ghost = true, icon = { NIcon(NIcons.ArrowUp) }) { NText("Sufficient") }
+                        NButton(icon = { NIcon(NIcons.ArrowUp) }) { NText("Life") }
+                    }
+                    NButtonGroup(vertical = true, size = NSize.Large, roundEnd = true) {
+                        NButton(icon = { NIcon(NIcons.ArrowUp) }) { NText("With") }
+                        NButton(icon = { NIcon(NIcons.ArrowUp) }) { NText("Enough") }
+                        NButton(ghost = true, icon = { NIcon(NIcons.ArrowUp) }) { NText("Happiness") }
+                    }
                 }
-                NButtonGroup(vertical = true, size = NSize.Large) {
-                    NButton { NText("With") }
-                    NButton { NText("Enough") }
-                    NButton(ghost = true, round = true) { NText("Happiness") }
+                NButtonGroup(size = NSize.Small, roundStart = true) {
+                    NButton(icon = { NIcon(NIcons.ArrowUp) }) { NText("Life") }
+                    NButton(icon = { NIcon(NIcons.ArrowUp) }) { NText("Is") }
+                    NButton(icon = { NIcon(NIcons.ArrowUp) }) { NText("Good") }
+                }
+                NButtonGroup(roundEnd = true) {
+                    NButton(ghost = true, icon = { NIcon(NIcons.ArrowUp) }) { NText("Eat") }
+                    NButton(ghost = true, icon = { NIcon(NIcons.ArrowUp) }) { NText("One More") }
+                    NButton(icon = { NIcon(NIcons.ArrowUp) }) { NText("Apple") }
                 }
             }
         }

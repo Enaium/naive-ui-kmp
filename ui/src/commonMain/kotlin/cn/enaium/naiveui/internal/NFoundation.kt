@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -23,6 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -52,7 +55,9 @@ import cn.enaium.naiveui.icons.NIcon
 import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NTheme
 import androidx.compose.runtime.staticCompositionLocalOf
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** Content color inherited by text and icons inside a component. */
 val LocalNContentColor = staticCompositionLocalOf { Color.Unspecified }
@@ -70,9 +75,44 @@ data class NInteractionState(
 @Composable
 fun rememberNInteraction(source: MutableInteractionSource): NInteractionState {
     val hovered by source.collectIsHoveredAsState()
-    val pressed by source.collectIsPressedAsState()
+    val pressed = rememberNPressInteraction(source)
     val focused by source.collectIsFocusedAsState()
     return NInteractionState(hovered, pressed, focused)
+}
+
+/**
+ * Press state with a minimum visible duration.
+ *
+ * A fast tap can emit Press and Release before the next frame, so
+ * `collectIsPressedAsState` never renders the pressed styling. Keeping the
+ * visual state for a short tail makes every tap visibly react.
+ */
+@Composable
+fun rememberNPressInteraction(
+    source: MutableInteractionSource,
+    minimumMillis: Long = 200L,
+): Boolean {
+    var pressed by mutableStateOf(false)
+    LaunchedEffect(source, minimumMillis) {
+        var hideJob: Job? = null
+        source.interactions.collect { interaction ->
+            when (interaction) {
+                is PressInteraction.Press -> {
+                    hideJob?.cancel()
+                    hideJob = null
+                    pressed = true
+                }
+                is PressInteraction.Release, is PressInteraction.Cancel -> {
+                    hideJob?.cancel()
+                    hideJob = launch {
+                        delay(minimumMillis)
+                        pressed = false
+                    }
+                }
+            }
+        }
+    }
+    return pressed
 }
 
 /** Rounded border that also supports dashed styling. */

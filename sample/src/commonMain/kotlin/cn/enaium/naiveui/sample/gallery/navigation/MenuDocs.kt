@@ -3,6 +3,7 @@ package cn.enaium.naiveui.sample.gallery.navigation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -12,6 +13,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.enaium.naiveui.components.NButton
+import cn.enaium.naiveui.components.NLayout
+import cn.enaium.naiveui.components.NLayoutCollapseMode
+import cn.enaium.naiveui.components.NLayoutSider
+import cn.enaium.naiveui.components.NLayoutSiderTrigger
 import cn.enaium.naiveui.components.NMenu
 import cn.enaium.naiveui.components.NMenuDivider
 import cn.enaium.naiveui.components.NMenuItem
@@ -230,21 +235,61 @@ NMenu(
 
         DemoSection(
             title = "Collapsed",
-            description = "Collapse the menu to icons. `collapsedWidth` controls the rail width; disabled entries stay disabled.",
+            description = "Use a collapsible layout sider with `showTrigger`. The trigger sits on the " +
+                "sider edge and collapses the menu to icons.",
+            code = """
+var collapsed by remember { mutableStateOf(true) }
+NLayout(hasSider = true) {
+    NLayoutSider(
+        bordered = true,
+        collapseMode = NLayoutCollapseMode.Width,
+        collapsedWidth = 64.dp,
+        width = 240.dp,
+        collapsed = collapsed,
+        onCollapsedChange = { collapsed = it },
+        showTrigger = true,
+        triggerStyle = NLayoutSiderTrigger.ArrowCircle,
+    ) {
+        NMenu(
+            options = options,
+            value = value,
+            onValueChange = { value = it },
+            collapsed = collapsed,
+            collapsedWidth = 64.dp,
+        )
+    }
+    NText("Content")
+}
+            """.trimIndent(),
         ) {
             var collapsed by remember { mutableStateOf(true) }
             var value by remember { mutableStateOf<String?>("hear-the-wind-sing") }
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                NButton(onClick = { collapsed = !collapsed }) {
-                    NText(if (collapsed) "Expand" else "Collapse")
-                }
-                NMenu(
-                    options = bookMenuOptions,
-                    value = value,
-                    onValueChange = { value = it },
-                    collapsed = collapsed,
+            NLayout(
+                modifier = Modifier.height(420.dp),
+                hasSider = true,
+            ) {
+                NLayoutSider(
+                    bordered = true,
+                    collapseMode = NLayoutCollapseMode.Width,
                     collapsedWidth = 64.dp,
-                )
+                    width = 240.dp,
+                    collapsed = collapsed,
+                    onCollapsedChange = { collapsed = it },
+                    showTrigger = true,
+                    triggerStyle = NLayoutSiderTrigger.ArrowCircle,
+                ) {
+                    NMenu(
+                        options = bookMenuOptions,
+                        value = value,
+                        onValueChange = { value = it },
+                        collapsed = collapsed,
+                        collapsedWidth = 64.dp,
+                        width = 240.dp,
+                    )
+                }
+                Column(Modifier.padding(24.dp)) {
+                    NText("Content", color = theme.colors.text1)
+                }
             }
         }
 

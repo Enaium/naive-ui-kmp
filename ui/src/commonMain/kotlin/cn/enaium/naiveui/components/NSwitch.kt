@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -43,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.enaium.naiveui.internal.NBaseLoading
 import cn.enaium.naiveui.internal.NBaseText
+import cn.enaium.naiveui.internal.rememberNPressInteraction
 import cn.enaium.naiveui.theme.LocalNTheme
 import cn.enaium.naiveui.theme.NSize
 import cn.enaium.naiveui.theme.nSize
@@ -88,7 +88,7 @@ fun NSwitch(
     val resolvedSize = nSize(size)
     val metrics = resolvedSize.switchMetrics()
     val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
+    val pressed = rememberNPressInteraction(interaction)
     val focused by interaction.collectIsFocusedAsState()
     val enabled = !disabled && !loading
 

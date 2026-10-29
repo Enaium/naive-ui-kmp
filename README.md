@@ -14,7 +14,7 @@ provides 750+ runnable demos.
 ## Installation
 
 ```kotlin
-implementation("cn.enaium.naiveui:naive-ui-kmp:1.1.1")
+implementation("cn.enaium.naiveui:naive-ui-kmp:1.1.2")
 ```
 
 ## Features

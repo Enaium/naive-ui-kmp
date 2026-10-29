@@ -36,11 +36,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -155,6 +160,7 @@ fun NSelect(
     val density = LocalDensity.current
     val interaction = remember { MutableInteractionSource() }
     var internalShow by remember { mutableStateOf(false) }
+    var keepFocusBorder by remember { mutableStateOf(false) }
     val expanded = show ?: internalShow
     var query by remember { mutableStateOf("") }
     var activeIndex by remember { mutableStateOf(-1) }
@@ -167,6 +173,12 @@ fun NSelect(
     fun setShow(next: Boolean) {
         if (show == null) internalShow = next
         onUpdateShow(next)
+    }
+
+    LaunchedEffect(expanded) {
+        if (!expanded && keepFocusBorder) {
+            resolvedFocusRequester.requestFocus()
+        }
     }
 
     fun updateQuery(next: String) {
@@ -364,16 +376,24 @@ fun NSelect(
             disabled = disabled,
             active = expanded,
             interaction = interaction,
+            keepFocusBorder = keepFocusBorder,
             loading = loading,
             clearable = clearable && !disabled && selectedValues.isNotEmpty(),
             showArrow = showArrow,
             suffix = suffix,
             onClear = ::clearSelection,
             onFocusChange = { focused ->
-                if (focused) onFocus?.invoke() else onBlur?.invoke()
+                if (focused) {
+                    keepFocusBorder = true
+                    onFocus?.invoke()
+                } else {
+                    if (!expanded) keepFocusBorder = false
+                    onBlur?.invoke()
+                }
             },
             onClick = {
                 if (!disabled) {
+                    keepFocusBorder = true
                     setShow(!expanded)
                     if (filterable) inputFocusRequester.requestFocus()
                     else resolvedFocusRequester.requestFocus()
@@ -418,6 +438,13 @@ fun NSelect(
                                     enabled = !disabled,
                                     focusRequester = inputFocusRequester,
                                     onFocus = { if (!disabled) setShow(true) },
+                                    onFocusChange = { focused ->
+                                        if (focused) {
+                                            keepFocusBorder = true
+                                        } else if (!expanded) {
+                                            keepFocusBorder = false
+                                        }
+                                    },
                                     onKeyEvent = keyHandler,
                                 )
                             }
@@ -458,6 +485,13 @@ fun NSelect(
                                 enabled = !disabled,
                                 focusRequester = inputFocusRequester,
                                 onFocus = { if (!disabled) setShow(true) },
+                                onFocusChange = { focused ->
+                                    if (focused) {
+                                        keepFocusBorder = true
+                                    } else if (!expanded) {
+                                        keepFocusBorder = false
+                                    }
+                                },
                                 onKeyEvent = keyHandler,
                                 textColor = if (selectedLabel != null) {
                                     theme.colors.text1
@@ -485,7 +519,10 @@ fun NSelect(
 
         NPopoverSurface(
             visible = expanded && !disabled,
-            onDismiss = { setShow(false) },
+            onDismiss = {
+                keepFocusBorder = false
+                setShow(false)
+            },
             placement = NPlacement.BottomStart,
             offset = IntOffset(0, 4),
             focusable = false,
@@ -691,6 +728,24 @@ internal fun nSelectionRowHeight(size: NSize): Dp = when (size) {
  * Shared trigger shell for select, tree select and cascader: bordered field
  * with hover/focus border, clear affordance and dropdown arrow.
  */
+private fun Modifier.nSelectionFocusRing(
+    visible: Boolean,
+    color: Color,
+    radius: Dp,
+): Modifier {
+    if (!visible) return this
+    return drawBehind {
+        val stroke = 2.dp.toPx()
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(-stroke / 2f, -stroke / 2f),
+            size = Size(size.width + stroke, size.height + stroke),
+            cornerRadius = CornerRadius(radius.toPx() + stroke / 2f),
+            style = Stroke(width = stroke),
+        )
+    }
+}
+
 @Composable
 internal fun NSelectionField(
     size: NSize,
@@ -698,6 +753,7 @@ internal fun NSelectionField(
     disabled: Boolean,
     active: Boolean,
     interaction: MutableInteractionSource,
+    keepFocusBorder: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     loading: Boolean = false,
@@ -720,10 +776,11 @@ internal fun NSelectionField(
     val borderColor = when {
         disabled -> theme.colors.border
         status != null && status != NStatus.Default -> theme.colors.statusColor(status)
-        active || focused -> theme.colors.primary
+        active || focused || keepFocusBorder -> theme.colors.primary
         hovered -> theme.colors.primaryHover
         else -> theme.colors.border
     }
+    val focusVisible = !disabled && (active || focused || keepFocusBorder)
     val background = if (disabled) theme.colors.inputDisabled else theme.colors.input
     val horizontal = when (size) {
         NSize.Tiny -> 6.dp
@@ -733,6 +790,11 @@ internal fun NSelectionField(
     }
     Box(
         modifier
+            .nSelectionFocusRing(
+                visible = focusVisible,
+                color = theme.colors.primary.copy(alpha = 0.2f),
+                radius = theme.borderRadius,
+            )
             .clip(shape)
             .background(background)
             .nBorder(borderColor, 1.dp, theme.borderRadius)
@@ -821,6 +883,7 @@ internal fun NSelectionFilterInput(
     enabled: Boolean = true,
     focusRequester: FocusRequester? = null,
     onFocus: () -> Unit = {},
+    onFocusChange: ((Boolean) -> Unit)? = null,
     onKeyEvent: ((KeyEvent) -> Boolean)? = null,
     textColor: Color = LocalNTheme.current.colors.text1,
 ) {
@@ -835,7 +898,10 @@ internal fun NSelectionFilterInput(
         onValueChange = onQueryChange,
         modifier = modifier
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { if (it.isFocused) onFocus() }
+            .onFocusChanged {
+                onFocusChange?.invoke(it.isFocused)
+                if (it.isFocused) onFocus()
+            }
             .then(
                 if (onKeyEvent != null) Modifier.onKeyEvent { onKeyEvent(it) }
                 else Modifier,
